@@ -1,0 +1,579 @@
+PROPERTYHUB - COMPREHENSIVE APPLICATION DOCUMENTATION
+================================================================
+
+VERSION: 3.0.0
+LAST UPDATED: August 29, 2025
+PLATFORM: Full-Stack Real Estate Marketplace
+
+================================================================
+TABLE OF CONTENTS
+================================================================
+
+1. APPLICATION OVERVIEW
+2. CORE FEATURES & CAPABILITIES
+3. TECHNICAL ARCHITECTURE
+4. USER ROLES & PERMISSIONS
+5. FRONTEND COMPONENTS
+6. BACKEND INFRASTRUCTURE
+7. MOBILE APPLICATION
+8. SECURITY & PRIVACY
+9. PAYMENT SYSTEM
+10. REAL-TIME COMMUNICATION
+11. SEARCH & FILTERING
+12. PROPERTY MANAGEMENT
+13. ANALYTICS & REPORTING
+14. DEPLOYMENT & INFRASTRUCTURE
+15. FILE STRUCTURE OVERVIEW
+16. DEVELOPMENT GUIDELINES
+
+================================================================
+1. APPLICATION OVERVIEW
+================================================================
+
+PropertyHub is a comprehensive, Airbnb-style real estate marketplace platform that enables users to buy, rent, and lease various types of properties including houses, lands, and commercial shops. The platform is built with modern web technologies and provides a seamless experience across web and mobile platforms.
+
+MISSION:
+To provide a secure, user-friendly, and feature-rich platform for real estate transactions in Ghana and beyond.
+
+KEY DIFFERENTIATORS:
+- Advanced search with AI-powered filtering
+- Real-time communication with end-to-end encryption
+- Comprehensive payment integration with fraud detection
+- Mobile-first design with offline capabilities
+- Role-based access control for different user types
+- 3D property visualizations and virtual tours
+- Automated reporting and analytics
+- PWA support for cross-platform compatibility
+
+================================================================
+2. CORE FEATURES & CAPABILITIES
+================================================================
+
+2.1 PROPERTY MARKETPLACE
+- Advanced property search and filtering system
+- Interactive map integration with Google Maps
+- Property comparison tools
+- Virtual tours and 3D visualizations
+- High-quality image galleries
+- Detailed property information and amenities
+- Price tracking and alerts
+- Wishlist and favorites functionality
+
+2.2 USER MANAGEMENT
+- Multi-role authentication (User, Host, Manager, Admin)
+- Profile management with verification system
+- Social login integration (Google, Facebook, GitHub)
+- Two-factor authentication support
+- Account security and privacy controls
+- User preferences and settings management
+
+2.3 BOOKING & TRANSACTIONS
+- Instant booking capabilities
+- Flexible reservation system
+- Calendar availability management
+- Pricing with dynamic rates and discounts
+- Secure payment processing with Paystack
+- Transaction history and receipts
+- Booking confirmation and notifications
+- Cancellation and refund management
+
+2.4 COMMUNICATION SYSTEM
+- Real-time chat with WebSocket support
+- End-to-end encryption for messages
+- Voice messaging capabilities
+- File and image sharing
+- Group chat for property inquiries
+- Manager assignment for chat moderation
+- Push notifications for messages
+- Chat history and search functionality
+
+2.5 PROPERTY MANAGEMENT
+- Property upload and listing management
+- Analytics dashboard for property performance
+- Booking management and calendar sync
+- Revenue tracking and reporting
+- Property status management
+- Bulk operations for multiple properties
+- SEO optimization for listings
+- Professional photography tools
+
+================================================================
+3. TECHNICAL ARCHITECTURE
+================================================================
+
+3.1 FRONTEND STACK
+- React 18 with TypeScript
+- Tailwind CSS v4 for styling
+- Vite for build tooling and development
+- ShadCN/UI component library
+- Motion/React for animations
+- Recharts for data visualization
+- React Hook Form for form management
+- Zustand for state management
+
+3.2 BACKEND INFRASTRUCTURE
+- Supabase for database and authentication
+- Node.js WebSocket server for real-time features
+- Hono web framework for API endpoints
+- PostgreSQL database with key-value store
+- Edge functions for serverless computing
+- File storage with signed URLs
+- Rate limiting and security middleware
+
+3.3 MOBILE PLATFORM
+- React Native with Expo SDK 53
+- Cross-platform iOS and Android support
+- Native navigation and gestures
+- Push notifications via Expo
+- Offline data synchronization
+- Native payment integration
+- Camera and file upload capabilities
+
+3.4 REAL-TIME FEATURES
+- WebSocket connections for live updates
+- Server-sent events for notifications
+- Real-time chat messaging
+- Live property availability updates
+- Instant booking confirmations
+- Activity feed updates
+
+================================================================
+4. USER ROLES & PERMISSIONS
+================================================================
+
+4.1 USER (Basic)
+- Browse and search properties
+- View property details and contact owners
+- Save properties to favorites
+- Send messages to property owners
+- Make booking requests
+- Manage personal profile
+
+4.2 HOST (Property Owner)
+- All User permissions
+- Upload and manage properties
+- Set pricing and availability
+- Respond to booking requests
+- Access property analytics
+- Manage property calendar
+
+4.3 MANAGER (Site Manager)
+- All Host permissions
+- Moderate chat conversations
+- Manage disputes and reports
+- Access user management tools
+- View platform analytics
+- Handle customer support
+
+4.4 ADMIN (System Administrator)
+- All Manager permissions
+- Full system administration
+- User role management
+- Platform configuration
+- Financial reporting
+- Security monitoring
+- Content moderation tools
+
+================================================================
+5. FRONTEND COMPONENTS
+================================================================
+
+5.1 CORE COMPONENTS
+- App.tsx - Main application entry point
+- ThemeProvider.tsx - Theme and styling management
+- ErrorBoundary.tsx - Error handling and fallbacks
+- AuthProvider.tsx - Authentication management
+- PaymentProvider.tsx - Payment processing context
+
+5.2 AUTHENTICATION COMPONENTS
+- SplashScreen.tsx - App loading screen
+- AuthLanding.tsx - Landing page for authentication
+- Login.tsx - User login form
+- Signup.tsx - User registration form
+- ProfileSettings.tsx - User profile management
+
+5.3 PROPERTY COMPONENTS
+- EnhancedPropertyDetailsView.tsx - Detailed property view
+- PropertyCard.tsx - Property listing card
+- PropertyUploadManager.tsx - Property creation tool
+- EnhancedPropertyManagement.tsx - Property management dashboard
+- PropertyComparison.tsx - Compare multiple properties
+
+5.4 SEARCH & FILTERING
+- EnhancedSearch.tsx - Advanced search interface
+- EnhancedSearchFilters.tsx - Filtering options
+- SearchProvider.tsx - Search state management
+- SmartFilters.tsx - AI-powered filtering
+- VirtualizedPropertyGrid.tsx - Performance-optimized listings
+
+5.5 COMMUNICATION
+- PropertyChatIntegration.tsx - Chat system integration
+- EnhancedChatRoom.tsx - Chat interface
+- MessageBubble.tsx - Message display component
+- VoiceMessageRecorder.tsx - Voice message functionality
+- FileShareManager.tsx - File sharing capabilities
+
+5.6 PAYMENT COMPONENTS
+- PaystackPayment.tsx - Payment processing interface
+- PaymentDashboard.tsx - Transaction management
+- PropertyCheckout.tsx - Booking checkout flow
+- SubscriptionManager.tsx - Subscription management
+- MobileCheckoutButton.tsx - Mobile payment interface
+
+5.7 ADMIN COMPONENTS
+- AdminDashboard.tsx - Administrative interface
+- PropertyAnalyticsDashboard.tsx - Analytics and reporting
+- EnhancedFraudDetectionDashboard.tsx - Security monitoring
+- DisputeWorkflowManager.tsx - Dispute resolution
+- AutomatedReportsManager.tsx - Report generation
+
+================================================================
+6. BACKEND INFRASTRUCTURE
+================================================================
+
+6.1 API ENDPOINTS
+- Authentication and user management
+- Property CRUD operations
+- Booking and reservation management
+- Payment processing and webhooks
+- Chat and messaging APIs
+- File upload and media management
+- Analytics and reporting endpoints
+
+6.2 DATABASE SCHEMA
+- Users table with role-based permissions
+- Properties table with comprehensive metadata
+- Bookings table for reservations
+- Messages table for chat history
+- Payments table for transaction records
+- Analytics tables for performance tracking
+- Key-value store for flexible data
+
+6.3 REAL-TIME SERVICES
+- WebSocket server for live communication
+- Push notification service
+- Real-time property updates
+- Live chat messaging
+- Booking status updates
+- Payment confirmations
+
+6.4 SECURITY MEASURES
+- Input validation and sanitization
+- Rate limiting and DDoS protection
+- SQL injection prevention
+- XSS and CSRF protection
+- Encryption for sensitive data
+- Audit logging for all actions
+
+================================================================
+7. MOBILE APPLICATION
+================================================================
+
+7.1 REACT NATIVE APP
+- Cross-platform iOS and Android support
+- Native navigation with smooth transitions
+- Optimized performance for mobile devices
+- Offline functionality with data sync
+- Push notifications for real-time updates
+- Native camera and photo integration
+
+7.2 EXPO INTEGRATION
+- Expo SDK 53 for modern React Native features
+- Over-the-air updates for rapid deployment
+- Native module integration
+- Development tools and debugging
+- Easy app store deployment process
+
+7.3 MOBILE-SPECIFIC FEATURES
+- Touch-optimized interface design
+- Swipe gestures for navigation
+- Pull-to-refresh functionality
+- Mobile-specific chat interface
+- Location services integration
+- Offline map caching
+
+================================================================
+8. SECURITY & PRIVACY
+================================================================
+
+8.1 DATA PROTECTION
+- End-to-end encryption for sensitive communications
+- GDPR compliance for data privacy
+- Secure file storage with access controls
+- User data anonymization options
+- Right to be forgotten implementation
+
+8.2 AUTHENTICATION SECURITY
+- Multi-factor authentication support
+- Password strength requirements
+- Session management and timeout
+- Account lockout protection
+- Social login integration with OAuth
+
+8.3 TRANSACTION SECURITY
+- PCI DSS compliance for payment processing
+- Fraud detection algorithms
+- Transaction monitoring and alerts
+- Secure payment tokenization
+- Chargeback and dispute management
+
+================================================================
+9. PAYMENT SYSTEM
+================================================================
+
+9.1 PAYSTACK INTEGRATION
+- Credit and debit card processing
+- Mobile money payments (MTN, Vodafone)
+- Bank transfers and direct debits
+- Recurring subscription payments
+- Multi-currency support
+- Payment webhooks for real-time updates
+
+9.2 TRANSACTION MANAGEMENT
+- Booking payment processing
+- Automatic payment splitting
+- Refund and cancellation handling
+- Payment history and receipts
+- Tax calculation and reporting
+- Revenue analytics and tracking
+
+9.3 SECURITY FEATURES
+- Tokenized payment processing
+- Fraud detection and prevention
+- Transaction monitoring
+- Dispute resolution system
+- Chargeback management
+- Compliance reporting
+
+================================================================
+10. REAL-TIME COMMUNICATION
+================================================================
+
+10.1 CHAT SYSTEM
+- Instant messaging with WebSocket
+- Group chat for property inquiries
+- File and image sharing
+- Voice message recording and playback
+- Message encryption and security
+- Chat moderation and reporting
+
+10.2 NOTIFICATIONS
+- Push notifications for mobile
+- In-app notifications for web
+- Email notifications for important events
+- SMS notifications for critical updates
+- Notification preferences and controls
+
+10.3 LIVE UPDATES
+- Real-time property availability
+- Live booking confirmations
+- Instant payment notifications
+- Property status updates
+- User activity indicators
+
+================================================================
+11. SEARCH & FILTERING
+================================================================
+
+11.1 ADVANCED SEARCH
+- Natural language search queries
+- Auto-complete and suggestions
+- Search history and saved searches
+- Location-based search with maps
+- Image-based property search
+- Voice search capabilities
+
+11.2 FILTERING OPTIONS
+- Price range and budget filters
+- Property type and category
+- Location and neighborhood
+- Amenities and features
+- Availability date ranges
+- User ratings and reviews
+
+11.3 SEARCH OPTIMIZATION
+- Elasticsearch integration for fast results
+- Search analytics and insights
+- A/B testing for search improvements
+- Machine learning for relevance
+- Performance optimization
+- Mobile-responsive search interface
+
+================================================================
+12. PROPERTY MANAGEMENT
+================================================================
+
+12.1 LISTING MANAGEMENT
+- Property creation and editing
+- Photo and video upload
+- Pricing and availability calendar
+- Property description optimization
+- SEO metadata management
+- Multi-language support
+
+12.2 ANALYTICS DASHBOARD
+- Property performance metrics
+- Booking conversion rates
+- Revenue tracking and forecasting
+- Guest reviews and ratings
+- Market comparison analysis
+- Occupancy rate monitoring
+
+12.3 AUTOMATION TOOLS
+- Automated pricing suggestions
+- Calendar synchronization
+- Guest communication templates
+- Review response automation
+- Maintenance scheduling
+- Performance alerts and notifications
+
+================================================================
+13. ANALYTICS & REPORTING
+================================================================
+
+13.1 BUSINESS INTELLIGENCE
+- Revenue and profit analysis
+- Market trends and insights
+- User behavior analytics
+- Property performance metrics
+- Conversion funnel analysis
+- Customer lifetime value
+
+13.2 REPORTING TOOLS
+- Automated report generation
+- Custom dashboard creation
+- Data export capabilities
+- Scheduled report delivery
+- Real-time analytics updates
+- Mobile analytics dashboard
+
+13.3 PERFORMANCE MONITORING
+- Application performance metrics
+- User experience analytics
+- Error tracking and monitoring
+- System health dashboards
+- Load balancing insights
+- Security event monitoring
+
+================================================================
+14. DEPLOYMENT & INFRASTRUCTURE
+================================================================
+
+14.1 WEB DEPLOYMENT
+- Vercel hosting for frontend
+- Netlify as backup deployment
+- CDN for global content delivery
+- Automatic SSL certificates
+- Custom domain configuration
+- Environment-based deployments
+
+14.2 BACKEND SERVICES
+- Supabase for database and auth
+- Docker containerization
+- PM2 for process management
+- Load balancing and scaling
+- Database backup and recovery
+- Monitoring and alerting
+
+14.3 MOBILE DEPLOYMENT
+- App Store and Google Play deployment
+- Expo Application Services (EAS)
+- Over-the-air updates
+- Beta testing with TestFlight
+- Performance monitoring
+- Crash reporting and analytics
+
+================================================================
+15. FILE STRUCTURE OVERVIEW
+================================================================
+
+15.1 ROOT DIRECTORY
+- App.tsx - Main application component
+- package.json - Project dependencies
+- vite.config.ts - Build configuration
+- netlify.toml / vercel.json - Deployment configs
+
+15.2 COMPONENTS DIRECTORY
+- Core UI components for all features
+- Specialized components for different domains
+- Reusable components following atomic design
+- Error boundaries for fault tolerance
+- Mobile-optimized component variants
+
+15.3 BACKEND DIRECTORY
+- WebSocket server implementation
+- React Native backend services
+- API endpoint configurations
+- Payment processing services
+- Real-time communication handlers
+
+15.4 MOBILE DIRECTORY
+- React Native/Expo application
+- Native component implementations
+- Mobile-specific services
+- Platform-specific configurations
+- App store deployment assets
+
+15.5 UTILITIES DIRECTORY
+- Helper functions and utilities
+- Configuration management
+- Validation and security tools
+- Performance optimization tools
+- Development and testing utilities
+
+================================================================
+16. DEVELOPMENT GUIDELINES
+================================================================
+
+16.1 CODE STANDARDS
+- TypeScript for type safety
+- ESLint and Prettier for code formatting
+- Component-based architecture
+- Responsive design principles
+- Accessibility (a11y) compliance
+- Performance optimization best practices
+
+16.2 TESTING STRATEGY
+- Unit tests for core functionality
+- Integration tests for API endpoints
+- End-to-end tests for user flows
+- Performance testing for scalability
+- Security testing for vulnerabilities
+- Mobile app testing on multiple devices
+
+16.3 DEPLOYMENT PROCESS
+- Git-based version control
+- Feature branch development workflow
+- Automated CI/CD pipelines
+- Environment-based deployments
+- Database migration management
+- Monitoring and rollback procedures
+
+================================================================
+CONCLUSION
+================================================================
+
+PropertyHub represents a comprehensive, modern real estate marketplace platform that combines cutting-edge technology with user-centric design. The application provides a complete ecosystem for property transactions, from discovery and communication to booking and payment processing.
+
+The platform's architecture ensures scalability, security, and performance while maintaining an excellent user experience across web and mobile platforms. With its extensive feature set, robust backend infrastructure, and mobile-first approach, PropertyHub is positioned to compete with leading real estate platforms globally.
+
+The modular design and comprehensive documentation enable efficient development, maintenance, and feature expansion, making it an ideal foundation for a growing real estate technology business.
+
+================================================================
+TECHNICAL SPECIFICATIONS SUMMARY
+================================================================
+
+Frontend: React 18 + TypeScript + Tailwind CSS v4
+Backend: Supabase + Node.js + WebSocket Server
+Mobile: React Native + Expo SDK 53
+Database: PostgreSQL + Key-Value Store
+Payment: Paystack Integration
+Real-time: WebSocket + Server-Sent Events
+Security: End-to-End Encryption + Multi-Factor Auth
+Deployment: Vercel + Netlify + Docker
+Analytics: Custom Dashboard + Real-time Monitoring
+PWA: Service Worker + Offline Support
+
+================================================================
+END OF DOCUMENTATION
+================================================================

@@ -1,0 +1,76 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting - relaxed for development */
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": false,
+    "noImplicitReturns": false,
+    "noImplicitOverride": false,
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+
+    /* Path aliases */
+    "paths": {
+      "@/*": ["./src/*"],
+      "@/components/*": ["./src/components/*"],
+      "@/utils/*": ["./src/utils/*"],
+      "@/types/*": ["./src/types/*"],
+      "@/hooks/*": ["./src/hooks/*"],
+      "@/styles/*": ["./src/styles/*"],
+      "components/*": ["./src/components/*"],
+      "utils/*": ["./src/utils/*"],
+      "types/*": ["./src/types/*"],
+      "hooks/*": ["./src/hooks/*"],
+      "styles/*": ["./src/styles/*"]
+    },
+
+    /* Module resolution */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Source maps */
+    "sourceMap": true,
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    "coverage",
+    "docs",
+    "database",
+    "scripts",
+    "supabase",
+    "mobile",
+    "backend",
+    "src/backend",
+    "src/mobile",
+    "src/src"
+  ],
+  "references": [
+    { "path": "./tsconfig.node.json" }
+  ]
+}

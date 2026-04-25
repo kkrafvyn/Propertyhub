@@ -1,0 +1,56 @@
+config:
+  target: "http://localhost:8080"
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 120
+      arrivalRate: 5
+      rampTo: 50
+      name: "Ramp up load"
+    - duration: 300
+      arrivalRate: 50
+      name: "Sustained load"
+  payload:
+    path: "./test-users.csv"
+    fields:
+      - "email"
+      - "password"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "User Browsing Properties"
+    flow:
+      - get:
+          url: "/health"
+      - get:
+          url: "/api/v1/properties"
+      - get:
+          url: "/api/v1/properties?location=Accra&min_price=1000"
+  
+  - name: "Messaging & Real-time Chat"
+    flow:
+      - post:
+          url: "/api/v1/messages/typing"
+          json:
+            conversationId: "conv_123"
+            isTyping: true
+      - think: 2
+      - post:
+          url: "/api/v1/messages/send"
+          json:
+            conversationId: "conv_123"
+            content: "Is this property still available?"
+            messageType: "text"
+
+  - name: "Payment Initialization Stress"
+    flow:
+      - post:
+          url: "/api/v1/payments/initialize"
+          json:
+            amount: 2500
+            email: "{{ email }}"
+            paymentMethod: "paystack"
+            description: "Load test payment"

@@ -1,0 +1,14 @@
+{
+  "appId": "com.propertyhub.app",
+  "appName": "PropertyHub",
+  "webDir": "build",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "Keyboard": {
+      "resize": "body"
+    }
+  }
+}

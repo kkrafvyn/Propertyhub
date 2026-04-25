@@ -1,0 +1,79 @@
+﻿src/components/AdminDashboard.tsx(177,21): error TS2345: Argument of type '{ id: string; name: string; email: string; role: string; avatar: string; status: string; joinedAt: string; lastLogin: string; stats: { totalMessages: number; totalBookings: number; }; }[]' is not assignable to parameter of type 'SetStateAction<AdminUser[]>'.
+  Type '{ id: string; name: string; email: string; role: string; avatar: string; status: string; joinedAt: string; lastLogin: string; stats: { totalMessages: number; totalBookings: number; }; }[]' is not assignable to type 'AdminUser[]'.
+    Type '{ id: string; name: string; email: string; role: string; avatar: string; status: string; joinedAt: string; lastLogin: string; stats: { totalMessages: number; totalBookings: number; }; }' is not assignable to type 'AdminUser'.
+      Types of property 'status' are incompatible.
+        Type 'string' is not assignable to type '"active" | "inactive" | "suspended" | "banned"'.
+src/components/analytics/ErrorTrackingSystem.tsx(98,22): error TS2339: Property 'error' does not exist on type 'ErrorEvent'.
+src/components/analytics/ErrorTrackingSystem.tsx(112,38): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "error", listener: (this: Window, ev: ErrorEvent) => any, options?: boolean | AddEventListenerOptions): void', gave the following error.
+    Argument of type '(event: ErrorEvent) => void' is not assignable to parameter of type '(this: Window, ev: ErrorEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'ErrorEvent' is missing the following properties from type 'ErrorEvent': id, timestamp, url, userAgent, and 2 more.
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void', gave the following error.
+    Argument of type '(event: ErrorEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: ErrorEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'ErrorEvent': id, timestamp, message, url, and 3 more.
+src/components/analytics/ErrorTrackingSystem.tsx(116,43): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(type: "error", listener: (this: Window, ev: ErrorEvent) => any, options?: boolean | EventListenerOptions): void', gave the following error.
+    Argument of type '(event: ErrorEvent) => void' is not assignable to parameter of type '(this: Window, ev: ErrorEvent) => any'.
+      Types of parameters 'event' and 'ev' are incompatible.
+        Type 'ErrorEvent' is missing the following properties from type 'ErrorEvent': id, timestamp, url, userAgent, and 2 more.
+  Overload 2 of 2, '(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void', gave the following error.
+    Argument of type '(event: ErrorEvent) => void' is not assignable to parameter of type 'EventListenerOrEventListenerObject'.
+      Type '(event: ErrorEvent) => void' is not assignable to type 'EventListener'.
+        Types of parameters 'event' and 'evt' are incompatible.
+          Type 'Event' is missing the following properties from type 'ErrorEvent': id, timestamp, message, url, and 3 more.
+src/pwa.ts(1,28): error TS2307: Cannot find module 'virtual:pwa-register' or its corresponding type declarations.
+src/utils/debugUtils.ts(233,19): error TS2339: Property 'navigationTiming' does not exist on type '{ appLoadTime: number; resourceTiming: PerformanceResourceTiming[]; }'.
+src/utils/devUtils.ts(178,7): error TS2322: Type 'boolean' is not assignable to type '{ push: boolean; email: boolean; sms: boolean; marketing: boolean; }'.
+src/utils/devUtils.ts(194,9): error TS2740: Type '{ id: string; title: string; description: string; price: number; currency: string; type: "house" | "apartment" | "land" | "shop"; status: "available" | "rented" | "sold"; images: string[]; location: { ...; }; ... 4 more ...; updatedAt: string; }' is missing the following properties from type 'Property': listingType, pricing, media, views, and 3 more.
+src/utils/devUtils.ts(395,20): error TS2686: 'React' refers to a UMD global, but the current file is a module. Consider adding an import instead.
+src/utils/devUtils.ts(397,3): error TS2686: 'React' refers to a UMD global, but the current file is a module. Consider adding an import instead.
+src/utils/devUtils.ts(424,3): error TS2686: 'React' refers to a UMD global, but the current file is a module. Consider adding an import instead.
+src/utils/errorTracking.ts(38,11): error TS2353: Object literal may only specify known properties, and 'url' does not exist in type 'ErrorContext'.
+src/utils/errorTracking.ts(58,9): error TS2353: Object literal may only specify known properties, and 'timestamp' does not exist in type 'Partial<ErrorDetails>'.
+src/utils/errorTracking.ts(84,7): error TS2353: Object literal may only specify known properties, and 'timestamp' does not exist in type 'ErrorDetails'.
+src/utils/errorTracking.ts(84,24): error TS2339: Property 'timestamp' does not exist on type 'Partial<ErrorDetails>'.
+src/utils/errorTracking.ts(85,21): error TS2339: Property 'userId' does not exist on type 'Partial<ErrorDetails>'.
+src/utils/errorTracking.ts(86,24): error TS2339: Property 'sessionId' does not exist on type 'Partial<ErrorDetails>'.
+src/utils/errorTracking.ts(89,24): error TS2339: Property 'userAgent' does not exist on type 'Partial<ErrorDetails>'.
+src/utils/errorTracking.ts(90,18): error TS2339: Property 'url' does not exist on type 'Partial<ErrorDetails>'.
+src/utils/errorTracking.ts(107,67): error TS2339: Property 'includes' does not exist on type 'string | number'.
+  Property 'includes' does not exist on type 'number'.
+src/utils/errorTracking.ts(120,62): error TS2339: Property 'includes' does not exist on type 'string | number'.
+  Property 'includes' does not exist on type 'number'.
+src/utils/errorTracking.ts(179,7): error TS2322: Type '"websocket"' is not assignable to type 'ErrorType'.
+src/utils/errorTracking.ts(196,7): error TS2322: Type '"payment"' is not assignable to type 'ErrorType'.
+src/utils/errorTracking.ts(247,28): error TS2339: Property 'timestamp' does not exist on type 'ErrorDetails'.
+src/utils/errorTracking.ts(298,102): error TS2322: Type '"database"' is not assignable to type 'ErrorType'.
+src/utils/errorTracking.ts(298,114): error TS2322: Type '"websocket"' is not assignable to type 'ErrorType'.
+src/utils/errorTracking.ts(298,127): error TS2322: Type '"payment"' is not assignable to type 'ErrorType'.
+src/utils/errorTracking.ts(298,138): error TS2322: Type '"file_upload"' is not assignable to type 'ErrorType'.
+src/utils/errorTracking.ts(298,153): error TS2322: Type '"geolocation"' is not assignable to type 'ErrorType'.
+src/utils/errorTracking.ts(298,168): error TS2322: Type '"pwa"' is not assignable to type 'ErrorType'.
+src/utils/offlineManager.ts(70,9): error TS2322: Type '"pwa"' is not assignable to type 'ErrorType'.
+src/utils/offlineManager.ts(89,11): error TS2322: Type '"database"' is not assignable to type 'ErrorType'.
+src/utils/offlineManager.ts(102,13): error TS2322: Type '"database"' is not assignable to type 'ErrorType'.
+src/utils/offlineManager.ts(105,15): error TS2561: Object literal may only specify known properties, but 'error' does not exist in type 'ErrorContext'. Did you mean to write 'errorId'?
+src/utils/offlineManager.ts(361,17): error TS2561: Object literal may only specify known properties, but 'actionId' does not exist in type 'ErrorContext'. Did you mean to write 'action'?
+src/utils/offlineManager.ts(419,25): error TS2339: Property 'toLowerCase' does not exist on type 'string | Address'.
+  Property 'toLowerCase' does not exist on type 'Address'.
+src/utils/offlineManager.ts(446,29): error TS2339: Property 'toLowerCase' does not exist on type 'string | Address'.
+  Property 'toLowerCase' does not exist on type 'Address'.
+src/utils/subscriptionService.ts(282,7): error TS2322: Type '"active" | "inactive" | "canceled"' is not assignable to type '"active" | "canceled" | "past_due" | "trialing" | "incomplete"'.
+  Type '"inactive"' is not assignable to type '"active" | "canceled" | "past_due" | "trialing" | "incomplete"'. Did you mean '"active"'?
+src/utils/testingUtils.ts(1,62): error TS2305: Module '"../types"' has no exported member 'Transaction'.
+src/utils/testingUtils.ts(292,9): error TS2322: Type 'boolean' is not assignable to type '{ push: boolean; email: boolean; sms: boolean; marketing: boolean; }'.
+src/utils/testingUtils.ts(297,11): error TS2353: Object literal may only specify known properties, and 'profileVisibility' does not exist in type '{ showProfile: boolean; showActivity: boolean; }'.
+src/utils/testingUtils.ts(321,9): error TS2561: Object literal may only specify known properties, but 'lat' does not exist in type '[number, number]'. Did you mean to write 'flat'?
+src/utils/testingUtils.ts(399,27): error TS2339: Property 'toLowerCase' does not exist on type 'string | Address'.
+  Property 'toLowerCase' does not exist on type 'Address'.
+src/utils/testingUtils.ts(410,16): error TS2345: Argument of type 'TestResult' is not assignable to parameter of type 'Promise<TestResult>'.
+  Type 'TestResult' is missing the following properties from type 'Promise<TestResult>': then, catch, finally, [Symbol.toStringTag]
+src/utils/testingUtils.ts(422,16): error TS2345: Argument of type 'TestResult' is not assignable to parameter of type 'Promise<TestResult>'.
+  Type 'TestResult' is missing the following properties from type 'Promise<TestResult>': then, catch, finally, [Symbol.toStringTag]
+src/utils/testingUtils.ts(426,7): error TS2345: Argument of type 'TestResult' is not assignable to parameter of type 'Promise<TestResult>'.
+  Type 'TestResult' is missing the following properties from type 'Promise<TestResult>': then, catch, finally, [Symbol.toStringTag]
+src/utils/webhookSecurityConfig.ts(93,15): error TS2345: Argument of type 'string | Buffer<ArrayBufferLike>' is not assignable to parameter of type 'string'.
+  Type 'Buffer<ArrayBufferLike>' is not assignable to type 'string'.

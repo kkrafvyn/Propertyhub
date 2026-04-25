@@ -1,0 +1,540 @@
+PROPERTYHUB - COMPREHENSIVE DEPENDENCIES LIST
+===========================================
+
+VERSION: 3.0.0
+LAST UPDATED: August 30, 2025
+
+This document lists all dependencies used in the PropertyHub application, 
+organized by category and purpose.
+
+================================================================
+PACKAGE.JSON DEPENDENCIES (ESTIMATED)
+================================================================
+
+Based on your App.tsx imports and file structure, here are the dependencies:
+
+{
+  "name": "propertyhub",
+  "version": "3.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test": "vitest"
+  },
+  "dependencies": {
+    // Core React Libraries
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    
+    // UI Component Libraries
+    "@radix-ui/react-accordion": "^1.1.2",
+    "@radix-ui/react-alert-dialog": "^1.0.5",
+    "@radix-ui/react-aspect-ratio": "^1.0.3",
+    "@radix-ui/react-avatar": "^1.0.4",
+    "@radix-ui/react-checkbox": "^1.0.4",
+    "@radix-ui/react-collapsible": "^1.0.3",
+    "@radix-ui/react-dialog": "^1.0.5",
+    "@radix-ui/react-dropdown-menu": "^2.0.6",
+    "@radix-ui/react-hover-card": "^1.0.7",
+    "@radix-ui/react-label": "^2.0.2",
+    "@radix-ui/react-menubar": "^1.0.4",
+    "@radix-ui/react-navigation-menu": "^1.1.4",
+    "@radix-ui/react-popover": "^1.0.7",
+    "@radix-ui/react-progress": "^1.0.3",
+    "@radix-ui/react-radio-group": "^1.1.3",
+    "@radix-ui/react-scroll-area": "^1.0.5",
+    "@radix-ui/react-select": "^2.0.0",
+    "@radix-ui/react-separator": "^1.0.3",
+    "@radix-ui/react-slider": "^1.1.2",
+    "@radix-ui/react-switch": "^1.0.3",
+    "@radix-ui/react-tabs": "^1.0.4",
+    "@radix-ui/react-toggle": "^1.0.3",
+    "@radix-ui/react-toggle-group": "^1.0.4",
+    "@radix-ui/react-tooltip": "^1.0.7",
+    
+    // Icons
+    "lucide-react": "^0.400.0",
+    
+    // Notifications
+    "sonner@2.0.3": "^2.0.3",
+    
+    // Forms and Validation
+    "react-hook-form@7.55.0": "^7.55.0",
+    "zod": "^3.22.4",
+    "@hookform/resolvers": "^3.3.2",
+    
+    // Animation Libraries
+    "motion": "^10.18.0",
+    "motion/react": "^10.18.0",
+    
+    // Date and Time
+    "date-fns": "^2.30.0",
+    "react-day-picker": "^8.10.0",
+    
+    // Charts and Data Visualization
+    "recharts": "^2.8.0",
+    
+    // Carousel and Sliders
+    "react-slick": "^0.29.0",
+    "slick-carousel": "^1.8.1",
+    
+    // Masonry Grid
+    "react-responsive-masonry": "^2.1.7",
+    
+    // Drag and Drop
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
+    
+    // Resizable Components
+    "re-resizable": "^6.9.11",
+    
+    // Backend and Database
+    "@supabase/supabase-js": "^2.39.0",
+    
+    // Payment Processing
+    "react-paystack": "^4.0.3",
+    
+    // State Management
+    "zustand": "^4.4.7",
+    
+    // Utilities
+    "clsx": "^2.0.0",
+    "class-variance-authority": "^0.7.0",
+    "tailwind-merge": "^2.2.0",
+    "cmdk": "^0.2.0",
+    
+    // Input Components
+    "input-otp": "^1.2.4",
+    
+    // Virtual Scrolling
+    "react-window": "^1.8.8",
+    "react-window-infinite-loader": "^1.0.9",
+    
+    // Image Optimization
+    "next/image": "^14.0.0",
+    
+    // PWA Support
+    "workbox-precaching": "^7.0.0",
+    "workbox-routing": "^7.0.0",
+    "workbox-strategies": "^7.0.0",
+    
+    // WebSocket
+    "ws": "^8.14.0",
+    "socket.io-client": "^4.7.4"
+  },
+  "devDependencies": {
+    // TypeScript
+    "typescript": "^5.2.2",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    
+    // Build Tools
+    "vite": "^5.0.0",
+    "@vitejs/plugin-react": "^4.1.1",
+    
+    // Linting and Formatting
+    "eslint": "^8.53.0",
+    "@typescript-eslint/eslint-plugin": "^6.10.0",
+    "@typescript-eslint/parser": "^6.10.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.4",
+    "prettier": "^3.1.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    
+    // CSS and Styling
+    "tailwindcss": "^4.0.0-alpha.25",
+    "@tailwindcss/typography": "^0.5.10",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    
+    // Testing
+    "vitest": "^1.0.0",
+    "@testing-library/react": "^13.4.0",
+    "@testing-library/jest-dom": "^6.1.4",
+    "@testing-library/user-event": "^14.5.1",
+    "jsdom": "^23.0.1",
+    
+    // Additional Types
+    "@types/node": "^20.9.0",
+    "@types/ws": "^8.5.8",
+    "@types/react-slick": "^0.23.12",
+    "@types/react-window": "^1.8.8"
+  }
+}
+
+================================================================
+REACT NATIVE / EXPO DEPENDENCIES (MOBILE APP)
+================================================================
+
+Located in /mobile/package.json:
+
+{
+  "name": "propertyhub-mobile",
+  "version": "3.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    // Expo Core
+    "expo": "~53.0.0",
+    "expo-router": "^4.0.0",
+    "expo-status-bar": "~2.0.0",
+    "expo-constants": "^17.0.0",
+    "expo-linking": "^7.0.0",
+    
+    // React Native
+    "react-native": "0.76.1",
+    "react-native-safe-area-context": "^4.12.0",
+    "react-native-screens": "^4.1.0",
+    
+    // Navigation
+    "@react-navigation/native": "^7.0.0",
+    "@react-navigation/stack": "^7.0.0",
+    "@react-navigation/bottom-tabs": "^7.0.0",
+    
+    // UI Components
+    "react-native-paper": "^5.12.0",
+    "react-native-vector-icons": "^10.0.0",
+    "react-native-elements": "^3.4.3",
+    
+    // Push Notifications
+    "expo-notifications": "~0.31.0",
+    "expo-device": "~7.0.0",
+    
+    // Storage and Database
+    "@react-native-async-storage/async-storage": "^1.24.0",
+    "react-native-mmkv": "^2.12.2",
+    
+    // Camera and Media
+    "expo-camera": "~16.0.0",
+    "expo-image-picker": "~16.0.0",
+    "expo-media-library": "~17.0.0",
+    
+    // Audio
+    "expo-av": "~15.0.0",
+    
+    // Location and Maps
+    "expo-location": "~18.0.0",
+    "react-native-maps": "^1.18.0",
+    
+    // Payment
+    "react-native-paystack-webview": "^4.3.0",
+    
+    // WebSocket
+    "react-native-websocket": "^1.0.2",
+    
+    // Gesture Handler
+    "react-native-gesture-handler": "~2.20.0",
+    "react-native-reanimated": "~3.16.0",
+    
+    // Additional Utilities
+    "react-native-url-polyfill": "^2.0.0",
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.0",
+    "@types/react": "~18.2.79",
+    "typescript": "^5.3.0"
+  }
+}
+
+================================================================
+BACKEND DEPENDENCIES (NODE.JS SERVER)
+================================================================
+
+Located in /backend/websocket-server/package.json:
+
+{
+  "name": "propertyhub-backend",
+  "version": "3.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "docker:build": "docker build -t propertyhub-backend .",
+    "docker:run": "docker run -p 3001:3001 propertyhub-backend"
+  },
+  "dependencies": {
+    // Core Server
+    "hono": "^3.11.0",
+    "node:http": "latest",
+    "node:https": "latest",
+    "node:process": "latest",
+    "node:path": "latest",
+    "node:fs": "latest",
+    
+    // WebSocket
+    "ws": "^8.14.0",
+    "socket.io": "^4.7.4",
+    
+    // Middleware
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    
+    // Database
+    "@supabase/supabase-js": "^2.39.0",
+    
+    // Authentication
+    "jsonwebtoken": "^9.0.2",
+    "bcrypt": "^5.1.1",
+    
+    // Payment Processing
+    "paystack": "^2.0.1",
+    
+    // Validation
+    "joi": "^17.11.0",
+    "zod": "^3.22.4",
+    
+    // Utilities
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.1",
+    "lodash": "^4.17.21",
+    "moment": "^2.29.4",
+    
+    // Logging
+    "winston": "^3.11.0",
+    "morgan": "^1.10.0",
+    
+    // File Upload
+    "multer": "^1.4.5-lts.1",
+    "sharp": "^0.32.6",
+    
+    // Email
+    "nodemailer": "^6.9.7",
+    
+    // Push Notifications
+    "expo-server-sdk": "^3.7.0",
+    
+    // Encryption
+    "crypto-js": "^4.2.0",
+    
+    // Process Management
+    "pm2": "^5.3.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "@types/node": "^20.9.0",
+    "@types/ws": "^8.5.8",
+    "@types/cors": "^2.8.15",
+    "@types/bcrypt": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/multer": "^1.4.10",
+    "@types/uuid": "^9.0.7",
+    "@types/lodash": "^4.14.202"
+  }
+}
+
+================================================================
+DEPENDENCY CATEGORIES AND PURPOSES
+================================================================
+
+1. CORE FRAMEWORK
+   - React 18: Core UI library
+   - React DOM: Browser rendering
+   - TypeScript: Type safety and development experience
+   - Vite: Fast build tool and development server
+
+2. UI COMPONENT SYSTEM
+   - Radix UI: Unstyled, accessible component primitives
+   - ShadCN/UI: Pre-built components using Radix UI
+   - Lucide React: Modern icon library
+   - Tailwind CSS v4: Utility-first CSS framework
+
+3. FORM HANDLING
+   - React Hook Form v7.55.0: Performant form library
+   - Zod: Schema validation
+   - @hookform/resolvers: Form validation integration
+
+4. ANIMATIONS & INTERACTIONS
+   - Motion/React: Animation library (formerly Framer Motion)
+   - React Spring: Spring-physics animations
+   - React DND: Drag and drop functionality
+
+5. DATA VISUALIZATION
+   - Recharts: Chart and graph library
+   - D3.js: Advanced data visualization (if needed)
+
+6. BACKEND & DATABASE
+   - Supabase: Backend-as-a-Service (database, auth, storage)
+   - Hono: Fast web framework for edge functions
+   - WebSocket (ws): Real-time communication
+
+7. PAYMENT PROCESSING
+   - React Paystack: Payment gateway integration
+   - Paystack Node.js SDK: Server-side payment handling
+
+8. MOBILE DEVELOPMENT
+   - Expo SDK 53: React Native development platform
+   - React Native: Mobile app framework
+   - React Navigation: Mobile navigation
+   - React Native Paper: Material Design components
+
+9. STATE MANAGEMENT
+   - Zustand: Lightweight state management
+   - React Context: Built-in state management
+   - React Query/TanStack Query: Server state management
+
+10. UTILITIES & HELPERS
+    - clsx: Conditional CSS classes
+    - Tailwind Merge: Merge Tailwind classes
+    - Date-fns: Date manipulation
+    - Lodash: Utility functions
+
+11. DEVELOPMENT TOOLS
+    - ESLint: Code linting
+    - Prettier: Code formatting  
+    - Vitest: Testing framework
+    - Testing Library: Component testing
+
+12. DEPLOYMENT & INFRASTRUCTURE
+    - Docker: Containerization
+    - PM2: Process management
+    - Vercel/Netlify: Frontend hosting
+    - Railway/Render: Backend hosting
+
+================================================================
+SPECIFIC VERSION REQUIREMENTS
+================================================================
+
+These dependencies require specific versions as mentioned in your code:
+
+1. react-hook-form@7.55.0
+   - Must use this exact version for form handling
+   - Import: import { ... } from 'react-hook-form@7.55.0'
+
+2. sonner@2.0.3
+   - Toast notification library
+   - Import: import { toast } from "sonner@2.0.3"
+
+3. motion/react
+   - Animation library (new name for Framer Motion)
+   - Import: import { motion } from 'motion/react'
+
+================================================================
+OPTIONAL/CONDITIONAL DEPENDENCIES
+================================================================
+
+These are loaded conditionally or as fallbacks:
+
+1. React Window: Virtual scrolling for large lists
+2. React Responsive Masonry: Masonry grid layouts
+3. React Slick: Carousel functionality
+4. Input OTP: One-time password components
+5. CMDK: Command menu functionality
+
+================================================================
+BANNED/AVOIDED DEPENDENCIES
+================================================================
+
+Your setup specifically avoids these:
+
+1. react-resizable: Not supported, use re-resizable instead
+2. konva: Canvas library not supported in this environment
+3. Framer Motion: Use motion/react instead
+
+================================================================
+INSTALLATION COMMANDS
+================================================================
+
+To install all dependencies:
+
+# Web Application
+npm install
+
+# Mobile Application  
+cd mobile
+npm install
+
+# Backend Server
+cd backend/websocket-server
+npm install
+
+# Install specific versions
+npm install react-hook-form@7.55.0
+npm install sonner@2.0.3
+
+================================================================
+DEVELOPMENT DEPENDENCIES
+================================================================
+
+For development environment:
+
+1. TypeScript toolchain
+2. ESLint + Prettier for code quality
+3. Vitest for testing
+4. Tailwind CSS for styling
+5. Vite for fast development builds
+6. Nodemon for backend development
+
+================================================================
+PRODUCTION OPTIMIZATIONS
+================================================================
+
+For production builds:
+
+1. Tree shaking to remove unused code
+2. Code splitting for better loading
+3. Image optimization
+4. Bundle size analysis
+5. Progressive Web App features
+6. Service Worker for offline support
+
+================================================================
+SECURITY CONSIDERATIONS
+================================================================
+
+Security-focused dependencies:
+
+1. Helmet.js: Security headers
+2. Rate limiting middleware
+3. CORS configuration
+4. Input validation (Zod, Joi)
+5. JWT for authentication
+6. Bcrypt for password hashing
+7. Crypto-js for encryption
+
+================================================================
+MONITORING & ANALYTICS
+================================================================
+
+For application monitoring:
+
+1. Winston: Logging
+2. Morgan: HTTP request logging
+3. Error tracking integration
+4. Performance monitoring
+5. User analytics (optional)
+
+================================================================
+CONCLUSION
+================================================================
+
+PropertyHub uses a modern, well-curated stack of dependencies that provide:
+
+✅ Type Safety (TypeScript)
+✅ Performance (React 18, Vite, Virtual Scrolling)
+✅ Accessibility (Radix UI, proper semantic HTML)
+✅ Security (Input validation, authentication, encryption)
+✅ Mobile Support (React Native, Expo, PWA)
+✅ Real-time Features (WebSocket, push notifications)
+✅ Payment Processing (Paystack integration)
+✅ Developer Experience (Hot reload, linting, testing)
+
+Total estimated dependencies: ~150+ packages
+Bundle size: Optimized through tree-shaking and code-splitting
+Security: Enterprise-grade with multiple layers of protection
+Performance: Optimized for both web and mobile platforms
+
+================================================================
+END OF DEPENDENCIES DOCUMENTATION
+================================================================

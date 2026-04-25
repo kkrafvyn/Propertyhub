@@ -1,0 +1,716 @@
+PROPERTYHUB - COMPLETE SETUP AND RUNNING GUIDE
+==============================================
+
+VERSION: 3.0.0
+LAST UPDATED: August 29, 2025
+
+This guide will help you set up and run the PropertyHub application locally and deploy it to production.
+
+================================================================
+TABLE OF CONTENTS
+================================================================
+
+1. PREREQUISITES
+2. QUICK START (Development)
+3. ENVIRONMENT SETUP
+4. WEB APPLICATION SETUP
+5. MOBILE APPLICATION SETUP
+6. BACKEND SERVICES SETUP
+7. DATABASE CONFIGURATION
+8. PAYMENT SYSTEM SETUP
+9. RUNNING THE APPLICATION
+10. DEPLOYMENT GUIDE
+11. TROUBLESHOOTING
+12. DEVELOPMENT WORKFLOW
+
+================================================================
+1. PREREQUISITES
+================================================================
+
+Before running PropertyHub, ensure you have the following installed:
+
+REQUIRED SOFTWARE:
+- Node.js (v18.0.0 or higher)
+- npm or yarn package manager
+- Git version control
+- Docker (for backend services)
+- Expo CLI (for mobile development)
+
+ACCOUNTS NEEDED:
+- Supabase account (for database and authentication)
+- Paystack account (for payment processing)
+- Google Cloud Platform (for maps integration)
+- Vercel/Netlify account (for deployment)
+
+SYSTEM REQUIREMENTS:
+- RAM: 8GB minimum, 16GB recommended
+- Storage: 5GB free space
+- OS: Windows 10+, macOS 10.15+, or Ubuntu 18.04+
+
+================================================================
+2. QUICK START (Development)
+================================================================
+
+For a quick development setup, follow these steps:
+
+1. CLONE THE REPOSITORY
+   ```bash
+   git clone <your-propertyhub-repo>
+   cd propertyhub
+   ```
+
+2. INSTALL DEPENDENCIES
+   ```bash
+   # Install web dependencies
+   npm install
+   
+   # Install mobile dependencies (if using mobile)
+   cd mobile
+   npm install
+   cd ..
+   
+   # Install backend dependencies
+   cd backend/websocket-server
+   npm install
+   cd ../..
+   ```
+
+3. COPY ENVIRONMENT FILES
+   ```bash
+   # Copy web environment file
+   cp .env.example .env.local
+   
+   # Copy backend environment file
+   cp backend/websocket-server/.env.example backend/websocket-server/.env
+   ```
+
+4. START DEVELOPMENT SERVERS
+   ```bash
+   # Terminal 1: Start web development server
+   npm run dev
+   
+   # Terminal 2: Start backend WebSocket server
+   cd backend/websocket-server
+   npm start
+   
+   # Terminal 3: Start mobile development (optional)
+   cd mobile
+   npx expo start
+   ```
+
+5. OPEN IN BROWSER
+   - Web App: http://localhost:5173
+   - Mobile App: Use Expo Go app to scan QR code
+
+================================================================
+3. ENVIRONMENT SETUP
+================================================================
+
+PropertyHub requires several environment variables to be configured:
+
+3.1 WEB APPLICATION (.env.local)
+```
+# Application Configuration
+VITE_APP_NAME=PropertyHub
+VITE_APP_VERSION=3.0.0
+VITE_APP_ENV=development
+
+# Supabase Configuration
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+
+# Payment Configuration (Paystack)
+VITE_PAYSTACK_PUBLIC_KEY=pk_test_your_paystack_public_key
+VITE_PAYSTACK_SECRET_KEY=sk_test_your_paystack_secret_key
+
+# Maps Configuration (Google Maps)
+VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+
+# WebSocket Configuration
+VITE_WEBSOCKET_URL=ws://localhost:3001
+VITE_WEBSOCKET_ENABLED=true
+
+# Real-time Features
+VITE_ENABLE_PUSH_NOTIFICATIONS=true
+VITE_ENABLE_OFFLINE_SUPPORT=true
+
+# Security Configuration
+VITE_ENABLE_ENCRYPTION=true
+VITE_SESSION_TIMEOUT=3600000
+
+# Development Configuration
+VITE_DEBUG_MODE=true
+VITE_MOCK_PAYMENTS=true
+```
+
+3.2 BACKEND SERVER (backend/websocket-server/.env)
+```
+# Server Configuration
+PORT=3001
+NODE_ENV=development
+HOST=localhost
+
+# Database Configuration
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Payment Configuration
+PAYSTACK_SECRET_KEY=sk_test_your_paystack_secret_key
+PAYSTACK_PUBLIC_KEY=pk_test_your_paystack_public_key
+
+# WebSocket Configuration
+WEBSOCKET_PORT=3001
+CORS_ORIGIN=http://localhost:5173
+
+# Security Configuration
+JWT_SECRET=your_jwt_secret_key
+ENCRYPTION_KEY=your_32_character_encryption_key
+
+# Push Notifications
+EXPO_ACCESS_TOKEN=your_expo_access_token
+
+# Rate Limiting
+RATE_LIMIT_REQUESTS=100
+RATE_LIMIT_WINDOW=15
+
+# Logging
+LOG_LEVEL=debug
+ENABLE_REQUEST_LOGGING=true
+```
+
+3.3 MOBILE APPLICATION (mobile/.env)
+```
+# Expo Configuration
+EXPO_PUBLIC_API_URL=http://localhost:5173
+EXPO_PUBLIC_WEBSOCKET_URL=ws://localhost:3001
+
+# Supabase Configuration
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Payment Configuration
+EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY=pk_test_your_paystack_public_key
+
+# Maps Configuration
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+
+# Push Notifications
+EXPO_PUBLIC_PUSH_NOTIFICATIONS_ENABLED=true
+```
+
+================================================================
+4. WEB APPLICATION SETUP
+================================================================
+
+4.1 INSTALL DEPENDENCIES
+```bash
+npm install
+```
+
+4.2 DEVELOPMENT SCRIPTS
+```bash
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+
+# Run type checking
+npm run type-check
+
+# Run linting
+npm run lint
+
+# Run tests
+npm run test
+```
+
+4.3 TECHNOLOGY STACK
+- React 18 with TypeScript
+- Vite for build tooling
+- Tailwind CSS v4 for styling
+- ShadCN/UI component library
+- Zustand for state management
+- React Hook Form for form handling
+- Motion/React for animations
+
+================================================================
+5. MOBILE APPLICATION SETUP
+================================================================
+
+5.1 INSTALL EXPO CLI (if not installed)
+```bash
+npm install -g @expo/cli
+```
+
+5.2 SETUP MOBILE PROJECT
+```bash
+cd mobile
+npm install
+```
+
+5.3 MOBILE DEVELOPMENT SCRIPTS
+```bash
+# Start Expo development server
+npx expo start
+
+# Start with specific platform
+npx expo start --android
+npx expo start --ios
+
+# Build for production
+npx expo build
+
+# Create development build
+eas build --profile development
+
+# Create production build
+eas build --profile production
+```
+
+5.4 MOBILE FEATURES
+- React Native with Expo SDK 53
+- Cross-platform iOS and Android support
+- Push notifications via Expo
+- Offline data synchronization
+- Native payment integration
+- Real-time chat functionality
+
+================================================================
+6. BACKEND SERVICES SETUP
+================================================================
+
+6.1 WEBSOCKET SERVER SETUP
+```bash
+cd backend/websocket-server
+npm install
+
+# Development mode with auto-reload
+npm run dev
+
+# Production mode
+npm start
+
+# Docker setup
+docker build -t propertyhub-backend .
+docker run -p 3001:3001 propertyhub-backend
+```
+
+6.2 REACT NATIVE BACKEND SETUP
+```bash
+# The React Native backend is integrated into the main application
+# No separate setup required, but ensure these files are present:
+# - backend/react-native/index.ts
+# - backend/react-native/webSocketManager.ts
+# - backend/react-native/mobileDataSyncService.ts
+```
+
+6.3 BACKEND FEATURES
+- Real-time WebSocket communication
+- Payment webhook handling
+- Push notification delivery
+- File upload and storage
+- User authentication and authorization
+- Rate limiting and security middleware
+
+================================================================
+7. DATABASE CONFIGURATION
+================================================================
+
+7.1 SUPABASE SETUP
+1. Create a Supabase project at https://supabase.com
+2. Copy your project URL and keys
+3. Configure Row Level Security (RLS) policies
+4. Set up the required tables and functions
+
+7.2 DATABASE SCHEMA
+The application uses Supabase with the following structure:
+- Key-value store table (kv_store_8669f8c6)
+- Built-in auth.users table
+- Custom user profiles table
+- Properties table
+- Bookings table
+- Messages table
+- Payments table
+
+7.3 SUPABASE CONFIGURATION
+```sql
+-- Enable RLS on all tables
+ALTER TABLE kv_store_8669f8c6 ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for authenticated users
+CREATE POLICY "Users can view their own data" ON kv_store_8669f8c6
+  FOR SELECT USING (auth.uid()::text = (value->>'user_id'));
+
+CREATE POLICY "Users can insert their own data" ON kv_store_8669f8c6
+  FOR INSERT WITH CHECK (auth.uid()::text = (value->>'user_id'));
+```
+
+================================================================
+8. PAYMENT SYSTEM SETUP
+================================================================
+
+8.1 PAYSTACK SETUP
+1. Create a Paystack account at https://paystack.com
+2. Get your test and live API keys
+3. Configure webhook endpoints
+4. Set up supported payment methods
+
+8.2 WEBHOOK CONFIGURATION
+```bash
+# Webhook URL for development
+http://localhost:3001/make-server-8669f8c6/webhooks/paystack
+
+# Webhook URL for production
+https://your-domain.com/api/webhooks/paystack
+```
+
+8.3 SUPPORTED PAYMENT METHODS
+- Credit and debit cards
+- Mobile money (MTN, Vodafone)
+- Bank transfers
+- USSD payments
+- QR code payments
+
+================================================================
+9. RUNNING THE APPLICATION
+================================================================
+
+9.1 DEVELOPMENT MODE
+```bash
+# Terminal 1: Start web development server
+npm run dev
+
+# Terminal 2: Start WebSocket server
+cd backend/websocket-server
+npm run dev
+
+# Terminal 3: Start mobile development (optional)
+cd mobile
+npx expo start
+
+# Terminal 4: Start Supabase local development (optional)
+npx supabase start
+```
+
+9.2 PRODUCTION MODE
+```bash
+# Build web application
+npm run build
+
+# Start production servers
+npm run preview
+
+# Start production WebSocket server
+cd backend/websocket-server
+npm start
+```
+
+9.3 DOCKER DEPLOYMENT
+```bash
+# Build and run with Docker Compose
+cd backend/websocket-server
+docker-compose up --build
+
+# Or use individual containers
+docker build -t propertyhub-web .
+docker build -t propertyhub-backend backend/websocket-server
+docker run -p 5173:5173 propertyhub-web
+docker run -p 3001:3001 propertyhub-backend
+```
+
+================================================================
+10. DEPLOYMENT GUIDE
+================================================================
+
+10.1 VERCEL DEPLOYMENT (Web App)
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy to Vercel
+vercel --prod
+
+# Or use GitHub integration:
+# 1. Connect your GitHub repository to Vercel
+# 2. Configure environment variables in Vercel dashboard
+# 3. Deploy automatically on push to main branch
+```
+
+10.2 NETLIFY DEPLOYMENT (Alternative)
+```bash
+# Build the application
+npm run build
+
+# Deploy to Netlify
+# 1. Drag and drop the dist/ folder to Netlify
+# 2. Or use Netlify CLI:
+npm i -g netlify-cli
+netlify deploy --prod --dir=dist
+```
+
+10.3 MOBILE APP DEPLOYMENT
+```bash
+# Build for production
+eas build --platform all
+
+# Submit to app stores
+eas submit --platform ios
+eas submit --platform android
+
+# Or create APK for Android
+eas build --platform android --profile preview
+```
+
+10.4 BACKEND DEPLOYMENT
+```bash
+# Deploy WebSocket server to cloud provider
+# Options: Railway, Render, DigitalOcean, AWS, etc.
+
+# Example for Railway:
+railway login
+railway init
+railway add
+railway up
+```
+
+================================================================
+11. TROUBLESHOOTING
+================================================================
+
+11.1 COMMON ISSUES
+
+ISSUE: "Module not found" errors
+SOLUTION: 
+```bash
+# Clear node_modules and reinstall
+rm -rf node_modules package-lock.json
+npm install
+```
+
+ISSUE: WebSocket connection failed
+SOLUTION:
+- Check if backend server is running on correct port
+- Verify WEBSOCKET_URL in environment variables
+- Check firewall/network settings
+
+ISSUE: Payment integration not working
+SOLUTION:
+- Verify Paystack API keys are correct
+- Check webhook URL configuration
+- Ensure test mode is enabled for development
+
+ISSUE: Mobile app not connecting to backend
+SOLUTION:
+- Use your computer's IP address instead of localhost
+- Update EXPO_PUBLIC_API_URL to use IP address
+- Ensure mobile device is on same network
+
+ISSUE: Supabase connection errors
+SOLUTION:
+- Verify Supabase URL and keys
+- Check RLS policies
+- Ensure database is running
+
+11.2 DEBUG MODE
+Enable debug mode to get detailed logging:
+```bash
+# Web application
+VITE_DEBUG_MODE=true npm run dev
+
+# Backend server
+LOG_LEVEL=debug npm run dev
+
+# Mobile application
+EXPO_PUBLIC_DEBUG_MODE=true npx expo start
+```
+
+11.3 PERFORMANCE OPTIMIZATION
+```bash
+# Analyze bundle size
+npm run build
+npm run analyze
+
+# Check for memory leaks
+npm run dev --profile
+
+# Optimize images
+npm run optimize-images
+```
+
+================================================================
+12. DEVELOPMENT WORKFLOW
+================================================================
+
+12.1 RECOMMENDED DEVELOPMENT SETUP
+```bash
+# Terminal setup:
+# Terminal 1: Web dev server (npm run dev)
+# Terminal 2: Backend server (cd backend/websocket-server && npm run dev)
+# Terminal 3: Git commands and general terminal work
+# Terminal 4: Mobile development (cd mobile && npx expo start)
+```
+
+12.2 CODE STRUCTURE
+```
+PropertyHub/
+├── components/          # React components
+├── hooks/              # Custom React hooks
+├── utils/              # Utility functions
+├── types/              # TypeScript type definitions
+├── styles/             # CSS and styling files
+├── backend/            # Backend services
+├── mobile/             # React Native mobile app
+└── docs/               # Documentation files
+```
+
+12.3 DEVELOPMENT BEST PRACTICES
+- Use TypeScript for type safety
+- Follow component-based architecture
+- Implement error boundaries for fault tolerance
+- Use lazy loading for performance
+- Write responsive designs mobile-first
+- Implement proper error handling
+- Use environment variables for configuration
+- Follow Git flow for version control
+
+12.4 TESTING
+```bash
+# Run unit tests
+npm run test
+
+# Run integration tests
+npm run test:integration
+
+# Run end-to-end tests
+npm run test:e2e
+
+# Run mobile tests
+cd mobile
+npm run test
+```
+
+================================================================
+ENVIRONMENT-SPECIFIC CONFIGURATIONS
+================================================================
+
+DEVELOPMENT:
+- Hot reloading enabled
+- Mock payment processing
+- Debug logging enabled
+- CORS allowing localhost
+- Unminified code
+
+STAGING:
+- Production-like environment
+- Real payment processing (test mode)
+- Limited logging
+- SSL/HTTPS required
+- Performance monitoring
+
+PRODUCTION:
+- Optimized and minified code
+- Live payment processing
+- Error logging only
+- CDN integration
+- Security hardening
+- Monitoring and analytics
+
+================================================================
+SECURITY CONSIDERATIONS
+================================================================
+
+DEVELOPMENT:
+- Use test API keys only
+- Enable CORS for localhost
+- Mock sensitive operations
+- Use development databases
+
+PRODUCTION:
+- Use live API keys securely
+- Implement proper CORS policies
+- Enable rate limiting
+- Use SSL/HTTPS everywhere
+- Implement proper authentication
+- Regular security audits
+- Backup and recovery plans
+
+================================================================
+SUPPORT AND MAINTENANCE
+================================================================
+
+MONITORING:
+- Application performance monitoring
+- Error tracking and logging
+- User analytics
+- Payment transaction monitoring
+- WebSocket connection health
+- Database performance metrics
+
+UPDATES:
+- Regular dependency updates
+- Security patch management
+- Feature releases
+- Bug fix deployments
+- Database migrations
+- Mobile app updates
+
+BACKUP:
+- Database backup strategies
+- Code repository backups
+- Environment configuration backups
+- User-uploaded content backups
+
+================================================================
+CONCLUSION
+================================================================
+
+PropertyHub is a comprehensive real estate platform with multiple components:
+
+1. Web application (React + TypeScript + Vite)
+2. Mobile application (React Native + Expo)
+3. Backend services (WebSocket server + Supabase)
+4. Payment integration (Paystack)
+5. Real-time features (Chat + Notifications)
+
+Follow this guide step by step to set up and run the application successfully.
+
+For additional support:
+- Check the documentation in the docs/ folder
+- Review component-specific README files
+- Consult the troubleshooting section
+- Check GitHub issues and discussions
+
+Remember to:
+- Keep environment variables secure
+- Use test modes for development
+- Monitor application performance
+- Regular backup and updates
+- Follow security best practices
+
+================================================================
+QUICK REFERENCE COMMANDS
+================================================================
+
+# Start everything for development:
+npm run dev                                    # Web app
+cd backend/websocket-server && npm run dev   # Backend
+cd mobile && npx expo start                  # Mobile
+
+# Build for production:
+npm run build                                 # Web app
+cd backend/websocket-server && npm start     # Backend
+cd mobile && eas build                       # Mobile
+
+# Deploy:
+vercel --prod                                 # Web to Vercel
+cd mobile && eas submit                      # Mobile to stores
+
+================================================================
+END OF SETUP GUIDE
+================================================================
