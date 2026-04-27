@@ -56,11 +56,11 @@ export class MobileBackendService {
   private syncTimer: NodeJS.Timeout | null = null;
 
   constructor(config: Partial<MobileConfig> = {}) {
-    const apiBase = (envConfig.API_URL || 'http://localhost:8080').replace(/\/$/, '');
+    const apiBase = envConfig.API_URL.replace(/\/$/, '');
 
     this.config = {
-      apiBaseUrl: `${apiBase}/api/v1`,
-      wsUrl: envConfig.WEBSOCKET_URL || 'ws://localhost:8080',
+      apiBaseUrl: apiBase ? `${apiBase}/api/v1` : '',
+      wsUrl: envConfig.WEBSOCKET_URL || '',
       apiKey: 'mobile-client',
       platform: this.detectPlatform(),
       offlineMode: false,
@@ -99,13 +99,15 @@ export class MobileBackendService {
       
       // Load persisted sync data
       await this.loadSyncData();
-      
-      // Initialize WebSocket connection
-      this.initWebSocket();
-      
-      // Start sync timer
-      this.startSyncTimer();
-      
+
+      if (this.config.apiBaseUrl && this.config.wsUrl) {
+        this.initWebSocket();
+      }
+
+      if (this.config.apiBaseUrl) {
+        this.startSyncTimer();
+      }
+
       // Set up offline detection
       this.setupOfflineDetection();
       
@@ -305,6 +307,10 @@ export class MobileBackendService {
     options: RequestInit = {},
     useCache: boolean = true
   ): Promise<any> {
+    if (!this.config.apiBaseUrl) {
+      throw new Error('Mobile backend is not configured. Set VITE_API_URL for this deployment.');
+    }
+
     const cacheKey = `api_${endpoint}_${JSON.stringify(options)}`;
     
     // If offline, return cached data

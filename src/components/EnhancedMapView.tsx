@@ -1,36 +1,41 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { 
-  MapPin, 
-  Navigation, 
-  Car, 
-  Clock,
-  Star,
-  Phone,
-  MessageCircle,
-  Bookmark,
-  Share,
-  ChevronLeft,
-  ChevronRight,
-  Layers,
-  Satellite,
-  Route,
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'motion/react';
+import {
   AlertCircle,
-  CheckCircle,
   ArrowLeft,
-  Download,
-  WifiOff,
-  Settings
+  Car,
+  CheckCircle,
+  Clock,
+  Layers,
+  MapPin,
+  MessageCircle,
+  Navigation,
+  Phone,
+  Route,
+  Satellite,
+  Share,
+  Star,
 } from 'lucide-react';
-import { Property, User as UserType, Booking, LocationData } from '../types';
+import { toast } from 'sonner';
+import type { Booking, LocationData, Property, User as UserType } from '../types';
+import {
+  getCurrentLocation,
+  openExternalUrl,
+  shareContent,
+  watchLocation,
+} from '../services/nativeCapabilities';
+import { getLocationLabel, getPropertyCoordinates } from '../utils/location';
+import {
+  buildExternalMapUrl,
+  buildMapPreviewSource,
+  calculateRouteWithAvailableProvider,
+  getMapDisplayProvider,
+  searchNearbyPlacesWithAvailableProvider,
+} from '../utils/mapService';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { getLocationLabel, getPropertyCoordinates } from '../utils/location';
-import { toast } from "sonner";
-import { googleMapsService } from '../utils/googleMaps';
-import { offlineMapManager, getNetworkStatus } from '../utils/offlineMapManager';
 
 interface EnhancedMapViewProps {
   properties?: Property[];
@@ -58,688 +63,671 @@ interface DirectionStep {
   maneuver: string;
 }
 
-// Mock Google Maps API functions for demonstration
-const mockGoogleMapsAPI = {
-  calculateRoute: async (origin: LocationData, destination: [number, number]): Promise<DirectionsData> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const distance = Math.random() * 50 + 5; // 5-55 km
-    const duration = Math.random() * 60 + 10; // 10-70 minutes
-    
-    return {
-      distance: `${distance.toFixed(1)} km`,
-      duration: `${duration.toFixed(0)} min`,
-      overview: `Head ${Math.random() > 0.5 ? 'north' : 'south'} on Main St, then follow the route to your destination.`,
-      steps: [
-        {
-          instruction: "Head north on Current Location St",
-          distance: "0.5 km",
-          duration: "2 min",
-          maneuver: "straight"
-        },
-        {
-          instruction: "Turn right onto Highway 101",
-          distance: `${(distance * 0.8).toFixed(1)} km`,
-          duration: `${(duration * 0.8).toFixed(0)} min`,
-          maneuver: "turn-right"
-        },
-        {
-          instruction: "Turn left onto Destination Ave",
-          distance: "0.3 km",
-          duration: "1 min",
-          maneuver: "turn-left"
-        },
-        {
-          instruction: "Arrive at destination",
-          distance: "0 km",
-          duration: "0 min",
-          maneuver: "arrive"
-        }
-      ]
-    };
-  },
-  
-  reverseGeocode: async (lat: number, lng: number): Promise<string> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return `${Math.floor(Math.random() * 9999)} Example St, City, State ${Math.floor(Math.random() * 90000 + 10000)}`;
-  }
-};
+interface NearbyPlace {
+  name: string;
+  type: string;
+  distance: string;
+  rating?: number;
+}
 
-export function EnhancedMapView({ 
-  properties = [], 
-  currentUser, 
-  selectedProperty, 
+export function EnhancedMapView({
+  properties = [],
+  currentUser,
+  selectedProperty,
   userBookings = [],
-  onBack, 
+  onBack,
   onPropertySelect,
-  onNavigateToProperty,
   mode,
-  targetBooking
+  targetBooking,
 }: EnhancedMapViewProps) {
   const [userLocation, setUserLocation] = useState<LocationData | null>(null);
   const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap');
   const [directionsData, setDirectionsData] = useState<DirectionsData | null>(null);
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
-  const [showNearbyPlaces, setShowNearbyPlaces] = useState(false);
   const [activeProperty, setActiveProperty] = useState<Property | null>(selectedProperty || null);
   const [isNavigating, setIsNavigating] = useState(false);
-  const [routeStarted, setRouteStarted] = useState(false);
-  const mapRef = useRef<HTMLDivElement>(null);
+  const stopNavigationRef = useRef<(() => void) | null>(null);
 
-  // Get user's current location
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            timestamp: Date.now()
-          });
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          toast.error('Unable to get your location. Please enable location services.');
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 300000 // 5 minutes
-        }
-      );
-    }
-  }, []);
+  const displayProperty =
+    mode === 'booking-details' && targetBooking
+      ? properties.find((property) => property.id === targetBooking.propertyId) || activeProperty
+      : activeProperty;
 
-  // Calculate directions to selected property
-  const calculateDirections = useCallback(async (property: Property) => {
-    if (!userLocation) {
-      toast.error('Location not available. Please enable location services.');
-      return;
-    }
-
-    setIsCalculatingRoute(true);
-    try {
-      const directions = await mockGoogleMapsAPI.calculateRoute(
-        userLocation,
-        getPropertyCoordinates(property)
-      );
-      setDirectionsData(directions);
-      setActiveProperty(property);
-      toast.success('Route calculated successfully!');
-    } catch (error) {
-      console.error('Error calculating directions:', error);
-      toast.error('Failed to calculate directions. Please try again.');
-    } finally {
-      setIsCalculatingRoute(false);
-    }
-  }, [userLocation]);
-
-  // Start navigation
-  const startNavigation = useCallback(() => {
-    if (!activeProperty || !directionsData) return;
-    
-    setIsNavigating(true);
-    setRouteStarted(true);
-    toast.success('Navigation started! Follow the directions below.');
-    
-    // Start location tracking for navigation
-    if (navigator.geolocation) {
-      const watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          setUserLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            timestamp: Date.now()
-          });
-        },
-        (error) => console.error('Navigation tracking error:', error),
-        {
-          enableHighAccuracy: true,
-          maximumAge: 10000,
-          timeout: 15000
-        }
-      );
-
-      // Clean up watch on component unmount
-      return () => navigator.geolocation.clearWatch(watchId);
-    }
-  }, [activeProperty, directionsData]);
-
-  // Get property to display (based on mode)
-  const displayProperty = mode === 'booking-details' && targetBooking 
-    ? properties.find(p => p.id === targetBooking.propertyId) || activeProperty
-    : activeProperty;
-
-  // Get user's bookings for map markers
-  const bookedProperties = properties.filter(property => 
-    userBookings.some(booking => 
-      booking.propertyId === property.id && 
-      booking.status === 'active'
-    )
+  const bookedProperties = useMemo(
+    () =>
+      properties.filter((property) =>
+        userBookings.some(
+          (booking) => booking.propertyId === property.id && booking.status === 'active',
+        ),
+      ),
+    [properties, userBookings],
   );
 
+  const displayCoordinates = useMemo(() => {
+    const [latitude, longitude] = getPropertyCoordinates(displayProperty);
+    return { latitude, longitude };
+  }, [displayProperty]);
+  const mapPreviewSource = useMemo(
+    () =>
+      buildMapPreviewSource(displayCoordinates.latitude, displayCoordinates.longitude, mapType),
+    [displayCoordinates.latitude, displayCoordinates.longitude, mapType]
+  );
+  const mapProviderLabel = useMemo(() => {
+    const provider = getMapDisplayProvider();
+    return provider === 'fallback' ? 'No live map provider' : provider === 'mapbox' ? 'Mapbox preview' : 'Google Maps';
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLocation = async () => {
+      try {
+        const location = await getCurrentLocation();
+        if (!cancelled) {
+          setUserLocation(location);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error getting location:', error);
+          toast.error('Unable to get your location. Please enable location services.');
+        }
+      }
+    };
+
+    void loadLocation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadNearbyPlaces = async () => {
+      if (!displayProperty) {
+        setNearbyPlaces([]);
+        return;
+      }
+
+      if (displayCoordinates.latitude === 0 && displayCoordinates.longitude === 0) {
+        setNearbyPlaces([]);
+        return;
+      }
+
+      try {
+        const places = await searchNearbyPlacesWithAvailableProvider(
+          {
+            lat: displayCoordinates.latitude,
+            lng: displayCoordinates.longitude,
+          },
+          1500,
+        );
+
+        if (!cancelled) {
+          setNearbyPlaces(
+            places.slice(0, 6).map((place) => ({
+              name: place.name,
+              type: place.type.replace(/_/g, ' '),
+              distance: `${place.distance.toFixed(1)} km`,
+              rating: place.rating,
+            })),
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error loading nearby places:', error);
+          setNearbyPlaces([]);
+        }
+      }
+    };
+
+    void loadNearbyPlaces();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayCoordinates.latitude, displayCoordinates.longitude, displayProperty]);
+
+  useEffect(
+    () => () => {
+      if (stopNavigationRef.current) {
+        stopNavigationRef.current();
+      }
+    },
+    [],
+  );
+
+  const calculateDirections = useCallback(
+    async (property: Property) => {
+      if (!userLocation) {
+        toast.error('Location not available yet. Please try again in a moment.');
+        return;
+      }
+
+      const [latitude, longitude] = getPropertyCoordinates(property);
+      if (latitude === 0 && longitude === 0) {
+        toast.error('This property is missing map coordinates.');
+        return;
+      }
+
+      setIsCalculatingRoute(true);
+
+      try {
+        const directions = await calculateRouteWithAvailableProvider(userLocation, {
+          lat: latitude,
+          lng: longitude,
+        });
+
+        setDirectionsData(directions);
+        setActiveProperty(property);
+        toast.success('Route calculated successfully.');
+      } catch (error) {
+        console.error('Error calculating directions:', error);
+        toast.error('Failed to calculate directions.');
+      } finally {
+        setIsCalculatingRoute(false);
+      }
+    },
+    [userLocation],
+  );
+
+  const startNavigation = useCallback(() => {
+    if (!displayProperty || !directionsData) return;
+
+    setIsNavigating(true);
+    toast.success('Navigation started. We will keep your location current.');
+
+    if (stopNavigationRef.current) {
+      stopNavigationRef.current();
+    }
+
+    void (async () => {
+      try {
+        stopNavigationRef.current = await watchLocation(
+          (location) => {
+            setUserLocation(location);
+          },
+          (error) => {
+            console.error('Navigation tracking error:', error);
+          },
+        );
+      } catch (error) {
+        console.error('Unable to start navigation tracking:', error);
+        toast.error('Unable to start live navigation tracking.');
+      }
+    })();
+  }, [directionsData, displayProperty]);
+
+  const stopNavigation = useCallback(() => {
+    if (stopNavigationRef.current) {
+      stopNavigationRef.current();
+      stopNavigationRef.current = null;
+    }
+
+    setIsNavigating(false);
+  }, []);
+
+  const handleOpenExternalMaps = useCallback(async () => {
+    if (!displayProperty) return;
+
+    await openExternalUrl(
+      buildExternalMapUrl(displayCoordinates.latitude, displayCoordinates.longitude),
+    );
+  }, [displayCoordinates.latitude, displayCoordinates.longitude, displayProperty]);
+
+  const handleSharePropertyLocation = useCallback(async () => {
+    if (!displayProperty) return;
+
+    try {
+      await shareContent({
+        title: `${displayProperty.title} location`,
+        text: `Navigate to ${displayProperty.title}`,
+        url: buildExternalMapUrl(displayCoordinates.latitude, displayCoordinates.longitude),
+        dialogTitle: 'Share property location',
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to share this location.');
+    }
+  }, [displayCoordinates.latitude, displayCoordinates.longitude, displayProperty]);
+
+  const headerTitle =
+    mode === 'directions'
+      ? 'Navigation'
+      : mode === 'booking-details'
+        ? 'Property Location'
+        : 'Map View';
+
   return (
-    <div className="fixed inset-0 z-50 bg-background flex flex-col">
-      {/* Header */}
-      <motion.header 
-        className="bg-card/80 backdrop-blur-lg border-b border-border p-4 flex items-center justify-between"
+    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+      <motion.header
+        className="border-b border-border bg-card/80 p-4 backdrop-blur-lg"
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="flex items-center space-x-4">
-          <Button variant="outline" size="sm" onClick={onBack}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-xl font-semibold">
-              {mode === 'directions' ? 'Navigation' : 
-               mode === 'booking-details' ? 'Property Location' : 'Map View'}
-            </h1>
-            {displayProperty && (
-              <p className="text-sm text-muted-foreground">
-                {displayProperty.title} • {getLocationLabel(displayProperty.location)}
-              </p>
-            )}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Button variant="outline" size="sm" onClick={onBack}>
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back
+            </Button>
+            <div>
+              <h1 className="text-xl font-semibold">{headerTitle}</h1>
+              {displayProperty ? (
+                <p className="text-sm text-muted-foreground">
+                  {displayProperty.title} • {getLocationLabel(displayProperty.location)}
+                </p>
+              ) : null}
+            </div>
           </div>
-        </div>
 
-        <div className="flex items-center space-x-2">
-          {/* Map Type Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setMapType(mapType === 'roadmap' ? 'satellite' : 'roadmap')}
-          >
-            {mapType === 'roadmap' ? <Satellite className="w-4 h-4" /> : <Layers className="w-4 h-4" />}
-          </Button>
-
-          {/* Navigation Controls */}
-          {displayProperty && !isNavigating && (
+          <div className="flex items-center space-x-2">
             <Button
-              variant="default"
+              variant="outline"
               size="sm"
-              onClick={() => calculateDirections(displayProperty)}
-              disabled={isCalculatingRoute || !userLocation}
+              onClick={() => setMapType(mapType === 'roadmap' ? 'satellite' : 'roadmap')}
             >
-              {isCalculatingRoute ? (
-                <Clock className="w-4 h-4 mr-2 animate-spin" />
+              {mapType === 'roadmap' ? (
+                <Satellite className="h-4 w-4" />
               ) : (
-                <Route className="w-4 h-4 mr-2" />
+                <Layers className="h-4 w-4" />
               )}
-              Get Directions
             </Button>
-          )}
 
-          {directionsData && !isNavigating && (
-            <Button
-              variant="default"
-              size="sm"
-              onClick={startNavigation}
-            >
-              <Navigation className="w-4 h-4 mr-2" />
-              Start Navigation
-            </Button>
-          )}
+            {displayProperty ? (
+              <Button
+                variant="default"
+                size="sm"
+                disabled={isCalculatingRoute || !userLocation}
+                onClick={() => {
+                  void calculateDirections(displayProperty);
+                }}
+              >
+                {isCalculatingRoute ? (
+                  <Clock className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Route className="mr-2 h-4 w-4" />
+                )}
+                Get Directions
+              </Button>
+            ) : null}
+            <Badge variant="outline" className="hidden md:inline-flex">
+              {mapProviderLabel}
+            </Badge>
+          </div>
         </div>
       </motion.header>
 
-      {/* Main Content */}
       <div className="relative flex min-h-0 flex-1">
-        {/* Map Container */}
-        <div className="flex-1 relative">
-          <motion.div
-            ref={mapRef}
-            className="relative h-full w-full overflow-hidden"
-            style={{
-              background:
-                mapType === 'satellite'
-                  ? 'linear-gradient(135deg, color-mix(in srgb, var(--foreground) 82%, #0f1216) 0%, color-mix(in srgb, var(--primary) 28%, #111418) 52%, color-mix(in srgb, var(--muted-foreground) 42%, #090b0f) 100%)'
-                  : 'linear-gradient(135deg, color-mix(in srgb, var(--secondary) 74%, white) 0%, var(--card) 52%, color-mix(in srgb, var(--accent) 24%, var(--card)) 100%)',
-            }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8 }}
-          >
-            {/* Mock Map Background */}
-            <div className="absolute inset-0">
-              {mapType === 'roadmap' ? (
-                <div
-                  className="h-full w-full"
-                  style={{
-                    background:
-                      'linear-gradient(135deg, color-mix(in srgb, var(--secondary) 78%, white) 0%, var(--card) 54%, color-mix(in srgb, var(--accent) 18%, var(--card)) 100%)',
-                  }}
-                >
-                  <svg className="w-full h-full">
-                    <defs>
-                      <pattern id="map-grid" width="50" height="50" patternUnits="userSpaceOnUse">
-                        <path d="M 50 0 L 0 0 0 50" fill="none" stroke="currentColor" strokeWidth="0.5" opacity="0.2"/>
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#map-grid)" />
-                  </svg>
-                </div>
-              ) : (
-                <div
-                  className="h-full w-full opacity-75"
-                  style={{
-                    background:
-                      'linear-gradient(135deg, color-mix(in srgb, var(--foreground) 88%, #0f1216) 0%, color-mix(in srgb, var(--primary) 32%, #111418) 48%, color-mix(in srgb, var(--muted-foreground) 45%, #090b0f) 100%)',
-                  }}
-                >
-                  <div
-                    className="absolute inset-0"
-                    style={{
-                      background:
-                        'linear-gradient(35deg, transparent 0%, color-mix(in srgb, var(--accent) 18%, transparent) 48%, color-mix(in srgb, var(--info) 22%, transparent) 100%)',
-                    }}
-                  />
-                </div>
-              )}
+        <div className="relative flex-1 bg-muted">
+          {displayProperty &&
+          displayCoordinates.latitude !== 0 &&
+          displayCoordinates.longitude !== 0 &&
+          mapPreviewSource ? (
+            mapPreviewSource.kind === 'iframe' ? (
+              <iframe
+                title={`${displayProperty.title} map`}
+                src={mapPreviewSource.src}
+                className="h-full w-full border-0"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            ) : (
+              <img
+                src={mapPreviewSource.src}
+                alt={`${displayProperty.title} map preview`}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            )
+          ) : (
+            <div className="flex h-full items-center justify-center bg-secondary/60">
+              <div className="text-center text-muted-foreground">
+                <MapPin className="mx-auto mb-3 h-10 w-10" />
+                <p>Map preview is unavailable for this listing.</p>
+              </div>
             </div>
+          )}
 
-            {/* Property Markers */}
-            <AnimatePresence>
-              {(mode === 'browse' ? properties : displayProperty ? [displayProperty] : []).map((property, index) => {
-                const isBooked = userBookings.some(booking => 
-                  booking.propertyId === property.id && booking.status === 'active'
-                );
-                const isTarget = mode === 'booking-details' && targetBooking?.propertyId === property.id;
-                
-                return (
-                  <motion.div
-                    key={property.id}
-                    className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 z-20"
-                    style={{
-                      left: `${50 + (Math.random() - 0.5) * 60}%`,
-                      top: `${50 + (Math.random() - 0.5) * 60}%`,
-                    }}
-                    initial={{ opacity: 0, scale: 0 }}
-                    animate={{ opacity: 1, scale: isTarget ? 1.3 : 1 }}
-                    transition={{ duration: 0.5, delay: index * 0.1 }}
-                    whileHover={{ scale: isTarget ? 1.4 : 1.2, zIndex: 30 }}
-                    onClick={() => {
-                      setActiveProperty(property);
-                      onPropertySelect?.(property);
-                    }}
-                  >
-                    <div className={`relative ${
-                      isTarget ? 'text-primary' : 
-                      isBooked ? 'text-[color:var(--success)]' : 
-                      'text-[color:var(--info)]'
-                    }`}>
-                      <MapPin className="w-8 h-8 drop-shadow-lg" fill="currentColor" />
-                      
-                      {/* Status Badge */}
-                      {(isBooked || isTarget) && (
-                        <motion.div
-                          className={`absolute -top-2 -right-2 w-4 h-4 rounded-full flex items-center justify-center ${
-                            isTarget ? 'bg-primary' : 'bg-[color:var(--success)]'
-                          }`}
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          transition={{ delay: 0.3 }}
-                        >
-                          <CheckCircle className="w-3 h-3 text-white" />
-                        </motion.div>
-                      )}
-                      
-                      {/* Pulse Effect for Active Property */}
-                      {isTarget && (
-                        <motion.div
-                          className="absolute top-1/2 left-1/2 w-8 h-8 -mt-4 -ml-4 rounded-full bg-primary/20"
-                          animate={{
-                            scale: [1, 2.5, 1],
-                            opacity: [0.5, 0, 0.5],
-                          }}
-                          transition={{
-                            duration: 2,
-                            repeat: Infinity,
-                          }}
-                        />
-                      )}
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-
-            {/* User Location Marker */}
-            {userLocation && (
-              <motion.div
-                className="absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 z-30"
-                style={{
-                  left: '30%',
-                  top: '70%',
-                }}
-                initial={{ opacity: 0, scale: 0 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5 }}
-              >
-                <div className="relative text-primary">
-                  <div className="w-4 h-4 bg-primary rounded-full border-2 border-white shadow-lg"></div>
-                  <motion.div
-                    className="absolute top-1/2 left-1/2 w-8 h-8 -mt-4 -ml-4 rounded-full bg-primary/30"
-                    animate={{
-                      scale: [1, 2, 1],
-                      opacity: [0.3, 0, 0.3],
-                    }}
-                    transition={{
-                      duration: 2,
-                      repeat: Infinity,
-                    }}
-                  />
-                </div>
-              </motion.div>
-            )}
-
-            {/* Route Path */}
-            {directionsData && routeStarted && (
-              <motion.svg
-                className="absolute inset-0 w-full h-full pointer-events-none"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 2, ease: "easeInOut" }}
-              >
-                <motion.path
-                  d="M 30% 70% Q 40% 40% 50% 50%"
-                  stroke="var(--primary)"
-                  strokeWidth="4"
-                  fill="none"
-                  strokeDasharray="10,5"
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: 1 }}
-                  transition={{ duration: 2, ease: "easeInOut" }}
-                />
-              </motion.svg>
-            )}
-          </motion.div>
-
-          {/* Navigation Status Card */}
-          {isNavigating && directionsData && (
+          {isNavigating && directionsData ? (
             <motion.div
-              className="absolute top-4 left-4 right-4 bg-card/95 backdrop-blur-lg border border-border rounded-xl p-4 shadow-lg z-40"
+              className="absolute left-4 right-4 top-4 z-20 rounded-xl border border-border bg-card/95 p-4 shadow-lg backdrop-blur-lg"
               initial={{ y: -100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.5 }}
             >
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-                    <Navigation className="w-4 h-4 text-white" />
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary">
+                    <Navigation className="h-4 w-4 text-white" />
                   </div>
                   <div>
                     <p className="font-semibold">Navigating to {displayProperty?.title}</p>
-                    <p className="text-sm text-muted-foreground">{directionsData.distance} • {directionsData.duration}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {directionsData.distance} • {directionsData.duration}
+                    </p>
                   </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setIsNavigating(false);
-                    setRouteStarted(false);
-                  }}
-                >
+                <Button variant="outline" size="sm" onClick={stopNavigation}>
                   Stop
                 </Button>
               </div>
-              
-              <div className="bg-muted/50 rounded-lg p-3">
-                <p className="text-sm font-medium mb-1">Next Step:</p>
-                <p className="text-sm">{directionsData.steps[0]?.instruction}</p>
+
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="mb-1 text-sm font-medium">Next Step</p>
+                <p className="text-sm">{directionsData.steps[0]?.instruction || directionsData.overview}</p>
               </div>
             </motion.div>
-          )}
+          ) : null}
         </div>
 
-        {/* Side Panel */}
-        <AnimatePresence>
-          {displayProperty && (
-            <motion.div
-              className="absolute inset-x-0 bottom-0 z-40 flex h-[min(72vh,680px)] flex-col border-t border-border bg-card/98 backdrop-blur-xl md:static md:z-auto md:h-full md:w-96 md:border-l md:border-t-0 md:bg-card md:backdrop-blur-none"
-              initial={{ x: 400, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 400, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            >
-              <Tabs defaultValue="details" className="flex min-h-0 flex-1 flex-col">
-                <TabsList className="grid w-full grid-cols-3 m-4">
-                  <TabsTrigger value="details">Details</TabsTrigger>
-                  <TabsTrigger value="directions">Route</TabsTrigger>
-                  <TabsTrigger value="nearby">Nearby</TabsTrigger>
-                </TabsList>
+        <motion.div
+          className="absolute inset-x-0 bottom-0 z-20 flex h-[min(72vh,680px)] flex-col border-t border-border bg-card/98 backdrop-blur-xl md:static md:h-full md:w-96 md:border-l md:border-t-0 md:bg-card md:backdrop-blur-none"
+          initial={{ x: 280, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+        >
+          <Tabs defaultValue="details" className="flex min-h-0 flex-1 flex-col">
+            <TabsList className="m-4 grid w-full grid-cols-3">
+              <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="directions">Route</TabsTrigger>
+              <TabsTrigger value="nearby">Nearby</TabsTrigger>
+            </TabsList>
 
-                <TabsContent value="details" className="flex-1 space-y-4 overflow-y-auto p-4">
-                  {/* Property Details */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle className="text-lg">{displayProperty.title}</CardTitle>
-                          <p className="text-sm text-muted-foreground">{getLocationLabel(displayProperty.location)}</p>
-                        </div>
-                        <Badge variant={displayProperty.available ? 'default' : 'secondary'}>
-                          {displayProperty.available ? 'Available' : 'Not Available'}
-                        </Badge>
+            <TabsContent value="details" className="flex-1 space-y-4 overflow-y-auto p-4">
+              {displayProperty ? (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg">{displayProperty.title}</CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                          {getLocationLabel(displayProperty.location)}
+                        </p>
                       </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-                        <img
-                          src={displayProperty.images[0]}
-                          alt={displayProperty.title}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      
-                        <div className="flex items-center justify-between">
-                          <div className="text-2xl font-bold">${displayProperty.price.toLocaleString()}</div>
-                          <div className="flex items-center space-x-1">
-                          <Star className="h-4 w-4 fill-current text-[color:var(--warning)]" />
-                            <span className="text-sm">{displayProperty.rating}</span>
-                          </div>
-                        </div>
+                      <Badge variant={displayProperty.available ? 'default' : 'secondary'}>
+                        {displayProperty.available ? 'Available' : 'Not Available'}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="aspect-video overflow-hidden rounded-lg bg-muted">
+                      <img
+                        src={displayProperty.images[0]}
+                        alt={displayProperty.title}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
 
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Type:</span>
-                          <span className="ml-2 capitalize">{displayProperty.type}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Area:</span>
-                          <span className="ml-2">{displayProperty.area} sqft</span>
-                        </div>
-                        {displayProperty.bedrooms && (
-                          <div>
-                            <span className="text-muted-foreground">Bedrooms:</span>
-                            <span className="ml-2">{displayProperty.bedrooms}</span>
-                          </div>
-                        )}
-                        {displayProperty.bathrooms && (
-                          <div>
-                            <span className="text-muted-foreground">Bathrooms:</span>
-                            <span className="ml-2">{displayProperty.bathrooms}</span>
-                          </div>
-                        )}
+                    <div className="flex items-center justify-between">
+                      <div className="text-2xl font-bold">${displayProperty.price.toLocaleString()}</div>
+                      <div className="flex items-center space-x-1">
+                        <Star className="h-4 w-4 fill-current text-[color:var(--warning)]" />
+                        <span className="text-sm">{displayProperty.rating}</span>
                       </div>
+                    </div>
 
-                      {mode === 'booking-details' && targetBooking && (
-                        <div className="theme-success-badge rounded-lg p-3">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <CheckCircle className="h-4 w-4 text-[color:var(--success)]" />
-                            <span className="font-medium text-[color:var(--success-soft-foreground)]">Active Booking</span>
-                          </div>
-                          <div className="text-sm space-y-1">
-                            <p><span className="text-muted-foreground">Type:</span> {targetBooking.type}</p>
-                            <p><span className="text-muted-foreground">Start:</span> {new Date(targetBooking.startDate).toLocaleDateString()}</p>
-                            {targetBooking.endDate && (
-                              <p><span className="text-muted-foreground">End:</span> {new Date(targetBooking.endDate).toLocaleDateString()}</p>
-                            )}
-                            <p><span className="text-muted-foreground">Amount:</span> ${targetBooking.amount.toLocaleString()}</p>
-                          </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Type:</span>
+                        <span className="ml-2 capitalize">{displayProperty.type}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Area:</span>
+                        <span className="ml-2">{displayProperty.area} sqft</span>
+                      </div>
+                      {displayProperty.bedrooms ? (
+                        <div>
+                          <span className="text-muted-foreground">Bedrooms:</span>
+                          <span className="ml-2">{displayProperty.bedrooms}</span>
                         </div>
+                      ) : null}
+                      {displayProperty.bathrooms ? (
+                        <div>
+                          <span className="text-muted-foreground">Bathrooms:</span>
+                          <span className="ml-2">{displayProperty.bathrooms}</span>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {mode === 'booking-details' && targetBooking ? (
+                      <div className="rounded-lg p-3 theme-success-badge">
+                        <div className="mb-2 flex items-center space-x-2">
+                          <CheckCircle className="h-4 w-4 text-[color:var(--success)]" />
+                          <span className="font-medium text-[color:var(--success-soft-foreground)]">
+                            Active Booking
+                          </span>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          <p>
+                            <span className="text-muted-foreground">Type:</span> {targetBooking.type}
+                          </p>
+                          <p>
+                            <span className="text-muted-foreground">Start:</span>{' '}
+                            {new Date(targetBooking.startDate).toLocaleDateString()}
+                          </p>
+                          {targetBooking.endDate ? (
+                            <p>
+                              <span className="text-muted-foreground">End:</span>{' '}
+                              {new Date(targetBooking.endDate).toLocaleDateString()}
+                            </p>
+                          ) : null}
+                          <p>
+                            <span className="text-muted-foreground">Amount:</span> $
+                            {targetBooking.amount.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-2">
+                      {!directionsData ? (
+                        <Button
+                          className="w-full"
+                          disabled={isCalculatingRoute || !userLocation}
+                          onClick={() => {
+                            void calculateDirections(displayProperty);
+                          }}
+                        >
+                          {isCalculatingRoute ? (
+                            <>
+                              <Clock className="mr-2 h-4 w-4 animate-spin" />
+                              Calculating...
+                            </>
+                          ) : (
+                            <>
+                              <Route className="mr-2 h-4 w-4" />
+                              Get Directions
+                            </>
+                          )}
+                        </Button>
+                      ) : !isNavigating ? (
+                        <Button className="w-full" onClick={startNavigation}>
+                          <Navigation className="mr-2 h-4 w-4" />
+                          Start Navigation
+                        </Button>
+                      ) : (
+                        <Button variant="outline" className="w-full" onClick={stopNavigation}>
+                          Stop Navigation
+                        </Button>
                       )}
 
-                      {/* Action Buttons */}
-                      <div className="space-y-2">
-                        {!directionsData ? (
-                          <Button 
-                            className="w-full" 
-                            onClick={() => calculateDirections(displayProperty)}
-                            disabled={isCalculatingRoute || !userLocation}
-                          >
-                            {isCalculatingRoute ? (
-                              <>
-                                <Clock className="w-4 h-4 mr-2 animate-spin" />
-                                Calculating...
-                              </>
-                            ) : (
-                              <>
-                                <Route className="w-4 h-4 mr-2" />
-                                Get Directions
-                              </>
-                            )}
-                          </Button>
-                        ) : !isNavigating ? (
-                          <Button className="w-full" onClick={startNavigation}>
-                            <Navigation className="w-4 h-4 mr-2" />
-                            Start Navigation
-                          </Button>
-                        ) : (
-                          <Button 
-                            variant="outline" 
-                            className="w-full"
-                            onClick={() => {
-                              setIsNavigating(false);
-                              setRouteStarted(false);
-                            }}
-                          >
-                            Stop Navigation
-                          </Button>
-                        )}
-                        
-                        <div className="flex space-x-2">
-                          <Button variant="outline" size="sm" className="flex-1">
-                            <Phone className="w-4 h-4 mr-2" />
-                            Call
-                          </Button>
-                          <Button variant="outline" size="sm" className="flex-1">
-                            <MessageCircle className="w-4 h-4 mr-2" />
-                            Message
-                          </Button>
-                          <Button variant="outline" size="sm" className="flex-1">
-                            <Share className="w-4 h-4 mr-2" />
-                            Share
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-
-                <TabsContent value="directions" className="flex-1 overflow-y-auto p-4">
-                  {directionsData ? (
-                    <div className="space-y-4">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg flex items-center">
-                            <Route className="w-5 h-5 mr-2" />
-                            Route Overview
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              <Clock className="w-4 h-4 text-muted-foreground" />
-                              <span>{directionsData.duration}</span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Car className="w-4 h-4 text-muted-foreground" />
-                              <span>{directionsData.distance}</span>
-                            </div>
-                          </div>
-                          <p className="text-sm text-muted-foreground">{directionsData.overview}</p>
-                        </CardContent>
-                      </Card>
-
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">Turn-by-Turn Directions</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3">
-                            {directionsData.steps.map((step, index) => (
-                              <div key={index} className="flex items-start space-x-3 p-2 rounded-lg hover:bg-muted/50">
-                                <div className="w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center text-xs font-medium text-primary mt-0.5">
-                                  {index + 1}
-                                </div>
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium">{step.instruction}</p>
-                                  <p className="text-xs text-muted-foreground">{step.distance} • {step.duration}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center">
-                      <div className="text-center">
-                        <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                        <p className="text-muted-foreground">Get directions to see route details</p>
-                        <Button 
-                          className="mt-4" 
-                          onClick={() => calculateDirections(displayProperty)}
-                          disabled={!userLocation}
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => {
+                            void handleOpenExternalMaps();
+                          }}
                         >
-                          <Route className="w-4 h-4 mr-2" />
-                          Calculate Route
+                          <Phone className="mr-2 h-4 w-4" />
+                          Open Maps
+                        </Button>
+                        <Button variant="outline" size="sm" className="flex-1">
+                          <MessageCircle className="mr-2 h-4 w-4" />
+                          Message
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => {
+                            void handleSharePropertyLocation();
+                          }}
+                        >
+                          <Share className="mr-2 h-4 w-4" />
+                          Share
                         </Button>
                       </div>
                     </div>
-                  )}
-                </TabsContent>
+                  </CardContent>
+                </Card>
+              ) : null}
 
-                <TabsContent value="nearby" className="flex-1 overflow-y-auto p-4">
+              {mode === 'browse' && bookedProperties.length > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Active Booking Pins</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {bookedProperties.map((property) => (
+                      <button
+                        key={property.id}
+                        type="button"
+                        className="w-full rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50"
+                        onClick={() => {
+                          setActiveProperty(property);
+                          onPropertySelect?.(property);
+                        }}
+                      >
+                        <div className="font-medium">{property.title}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {getLocationLabel(property.location)}
+                        </div>
+                      </button>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
+            </TabsContent>
+
+            <TabsContent value="directions" className="flex-1 overflow-y-auto p-4">
+              {directionsData ? (
+                <div className="space-y-4">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-lg">Nearby Places</CardTitle>
+                      <CardTitle className="flex items-center text-lg">
+                        <Route className="mr-2 h-5 w-5" />
+                        Route Overview
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <span>{directionsData.duration}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Car className="h-4 w-4 text-muted-foreground" />
+                          <span>{directionsData.distance}</span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{directionsData.overview}</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Turn-by-Turn Directions</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-3">
-                        {[
-                          { name: 'Starbucks Coffee', type: 'Cafe', distance: '0.2 km', rating: 4.5 },
-                          { name: 'Central Park', type: 'Park', distance: '0.5 km', rating: 4.8 },
-                          { name: 'Metro Station', type: 'Transport', distance: '0.3 km', rating: 4.2 },
-                          { name: 'Grocery Store', type: 'Shopping', distance: '0.7 km', rating: 4.3 },
-                          { name: 'Hospital', type: 'Healthcare', distance: '1.2 km', rating: 4.6 },
-                        ].map((place, index) => (
-                          <div key={index} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50">
-                            <div>
-                              <p className="font-medium text-sm">{place.name}</p>
-                              <p className="text-xs text-muted-foreground">{place.type} • {place.distance}</p>
+                        {directionsData.steps.map((step, index) => (
+                          <div
+                            key={`${step.instruction}-${index}`}
+                            className="flex items-start space-x-3 rounded-lg p-2 hover:bg-muted/50"
+                          >
+                            <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+                              {index + 1}
                             </div>
-                            <div className="flex items-center space-x-1">
-                              <Star className="h-3 w-3 fill-current text-[color:var(--warning)]" />
-                              <span className="text-xs">{place.rating}</span>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{step.instruction}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {step.distance} • {step.duration}
+                              </p>
                             </div>
                           </div>
                         ))}
                       </div>
                     </CardContent>
                   </Card>
-                </TabsContent>
-              </Tabs>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                </div>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <div className="text-center">
+                    <AlertCircle className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+                    <p className="text-muted-foreground">
+                      Get directions to see route details.
+                    </p>
+                    {displayProperty ? (
+                      <Button
+                        className="mt-4"
+                        disabled={!userLocation}
+                        onClick={() => {
+                          void calculateDirections(displayProperty);
+                        }}
+                      >
+                        <Route className="mr-2 h-4 w-4" />
+                        Calculate Route
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="nearby" className="flex-1 overflow-y-auto p-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Nearby Places</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {nearbyPlaces.length > 0 ? (
+                    <div className="space-y-3">
+                      {nearbyPlaces.map((place) => (
+                        <div
+                          key={`${place.name}-${place.distance}`}
+                          className="flex items-center justify-between rounded-lg p-2 hover:bg-muted/50"
+                        >
+                          <div>
+                            <p className="text-sm font-medium">{place.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {place.type} • {place.distance}
+                            </p>
+                          </div>
+                          {typeof place.rating === 'number' ? (
+                            <div className="flex items-center space-x-1">
+                              <Star className="h-3 w-3 fill-current text-[color:var(--warning)]" />
+                              <span className="text-xs">{place.rating}</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                      Nearby places will appear here when the map service returns results for this
+                      property.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </motion.div>
       </div>
     </div>
   );

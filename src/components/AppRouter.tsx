@@ -2,9 +2,13 @@ import React, { Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { LoadingSpinner } from './LoadingSpinner';
+import PaymentCallback from './PaymentCallback';
 import { PropertyDetailsView } from './PropertyDetailsView';
 import { Marketplace } from './Marketplace';
+import BillingCenter from './BillingCenter';
+import HelpCenter from './HelpCenter';
 import { Property, PropertyFilters, User as UserType, ExtendedAppState } from '../types';
+import { listAccessibleBookings } from '../services/dashboardDataService';
 import {
   UserDashboard,
   ProfileSettings,
@@ -28,9 +32,9 @@ interface AppRouterProps {
   onNavigation: (route: ExtendedAppState) => void;
   setCurrentUser: (user: UserType | null) => void;
   setSelectedProperty: (property: Property | null) => void;
-  onAddProperty: (property: Property) => void;
-  onUpdateProperty: (propertyId: string, updates: Partial<Property>) => void;
-  onDeleteProperty: (propertyId: string) => void;
+  onAddProperty: (property: Property) => Promise<void> | void;
+  onUpdateProperty: (propertyId: string, updates: Partial<Property>) => Promise<void> | void;
+  onDeleteProperty: (propertyId: string) => Promise<void> | void;
 }
 
 // Memoized components for performance
@@ -51,6 +55,41 @@ export const AppRouter: React.FC<AppRouterProps> = ({
   onUpdateProperty,
   onDeleteProperty
 }) => {
+  const [accessibleBookings, setAccessibleBookings] = React.useState<any[]>([]);
+
+  React.useEffect(() => {
+    let isMounted = true;
+
+    if (!currentUser) {
+      setAccessibleBookings([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    void listAccessibleBookings(currentUser, properties, 20)
+      .then((bookings) => {
+        if (isMounted) {
+          setAccessibleBookings(bookings);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load accessible bookings for routing:', error);
+        if (isMounted) {
+          setAccessibleBookings([]);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser, properties]);
+
+  const selectedBooking = React.useMemo(() => {
+    if (!selectedProperty) return null;
+    return accessibleBookings.find((booking) => booking.propertyId === selectedProperty.id) || null;
+  }, [accessibleBookings, selectedProperty]);
+
   return (
     <main className="min-w-0 transition-all duration-500">
       <AnimatePresence mode="wait">
@@ -70,6 +109,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                       currentUser={currentUser!}
                       properties={properties}
                       onPropertySelect={onPropertySelect}
+                      onNavigation={onNavigation}
                     />
                   </Suspense>
                 </motion.div>
@@ -86,12 +126,66 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                   transition={{ duration: 0.3 }}
                 >
                   <Suspense fallback={<LoadingSpinner />}>
-                    <ProfileSettings 
+                    <ProfileSettings
                       currentUser={currentUser!}
                       onUpdateUser={setCurrentUser}
                       onClose={() => onNavigation('main')}
+                      onNavigate={onNavigation}
                     />
                   </Suspense>
+                </motion.div>
+              );
+
+            case 'billing':
+              return (
+                <motion.div
+                  key="billing"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <BillingCenter
+                    currentUser={currentUser!}
+                    onBack={() => onNavigation('profile-settings')}
+                    onNavigate={onNavigation}
+                  />
+                </motion.div>
+              );
+
+            case 'privacy':
+              return (
+                <motion.div
+                  key="privacy"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <ProfileSettings
+                    currentUser={currentUser!}
+                    onUpdateUser={setCurrentUser}
+                    onClose={() => onNavigation('profile-settings')}
+                    onNavigate={onNavigation}
+                    focusSection="privacy"
+                  />
+                </motion.div>
+              );
+
+            case 'help':
+              return (
+                <motion.div
+                  key="help"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <HelpCenter
+                    currentUser={currentUser!}
+                    onBack={() => onNavigation('profile-settings')}
+                    onNavigate={onNavigation}
+                  />
                 </motion.div>
               );
 
@@ -108,6 +202,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     <PropertyManagement
                       user={currentUser!}
                       properties={properties}
+                      onNavigation={onNavigation}
                       onAddProperty={onAddProperty}
                       onUpdateProperty={onUpdateProperty}
                       onDeleteProperty={onDeleteProperty}
@@ -129,6 +224,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     <AdminPanel 
                       currentUser={currentUser!}
                       properties={properties}
+                      onNavigation={onNavigation}
                     />
                   </Suspense>
                 </motion.div>
@@ -149,6 +245,19 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                       onBack={() => onNavigation('main')}
                     />
                   </Suspense>
+                </motion.div>
+              );
+
+            case 'payments':
+              return (
+                <motion.div
+                  key="payments"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <PaymentCallback onNavigate={onNavigation} />
                 </motion.div>
               );
             
@@ -185,21 +294,25 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                 >
                   <Suspense fallback={<LoadingSpinner />}>
                     <BookingDirections 
-                      booking={{
-                        id: 'demo-booking',
-                        propertyId: selectedProperty?.id || '',
-                        propertyTitle: selectedProperty?.title || '',
-                        propertyImage: selectedProperty?.images[0] || '',
-                        type: 'rent',
-                        amount: selectedProperty?.price || 0,
-                        startDate: new Date().toISOString(),
-                        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-                        status: 'active',
-                        paymentReference: 'PAY-' + Math.random().toString(36).substr(2, 9),
+                      booking={selectedBooking ? {
+                        id: selectedBooking.id,
+                        propertyId: selectedBooking.propertyId,
+                        propertyTitle: selectedBooking.propertyTitle,
+                        propertyImage: selectedBooking.propertyImage,
+                        type: selectedBooking.type,
+                        amount: selectedBooking.amount,
+                        startDate: selectedBooking.startDateRaw || new Date().toISOString(),
+                        endDate: selectedBooking.endDateRaw,
+                        status: selectedBooking.status.toLowerCase().replace(/\s+/g, '_'),
                         hostId: selectedProperty?.ownerId || '',
                         userId: currentUser!.id,
-                        createdAt: new Date().toISOString()
-                      }}
+                        createdAt: selectedBooking.startDateRaw || new Date().toISOString(),
+                        updatedAt: selectedBooking.endDateRaw || selectedBooking.startDateRaw || new Date().toISOString(),
+                        totalAmount: selectedBooking.amount,
+                        currency: selectedBooking.currency,
+                        confirmationCode: selectedBooking.id,
+                        paymentStatus: 'completed',
+                      } : null}
                       property={selectedProperty!}
                       currentUser={currentUser!}
                       onBack={() => onNavigation('main')}
@@ -223,7 +336,11 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                       currentUser={currentUser!}
                       onBack={() => onNavigation('main')}
                       onTourScheduled={(tour) => {
-                        toast.success('Tour scheduled successfully!');
+                        toast.success(
+                          tour.status === 'pending_confirmation'
+                            ? 'Tour request sent. Host confirmation is still required.'
+                            : 'Tour scheduled successfully!',
+                        );
                         onNavigation('dashboard');
                       }}
                     />
@@ -244,7 +361,7 @@ export const AppRouter: React.FC<AppRouterProps> = ({
                     <OfflineMapManager 
                       currentUser={currentUser!}
                       properties={properties}
-                      userBookings={[]}
+                      userBookings={accessibleBookings}
                       selectedProperty={selectedProperty}
                       onBack={() => onNavigation('main')}
                     />

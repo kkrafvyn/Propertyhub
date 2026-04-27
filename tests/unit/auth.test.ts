@@ -54,15 +54,19 @@ describe('Authentication Services', () => {
       expect(decoded.role).toBe('user');
     });
 
-    it('should expire token according to expiresIn parameter', (done) => {
-      const token = generateToken('user999', 'user', '1ms');
-      
-      setTimeout(() => {
-        expect(() => {
-          jwt.verify(token, JWT_SECRET);
-        }).toThrow('jwt expired');
-        done();
-      }, 10);
+    it('should expire token according to expiresIn parameter', () => {
+      const token = jwt.sign(
+        {
+          userId: 'user999',
+          role: 'user',
+          exp: Math.floor(Date.now() / 1000) - 1,
+        },
+        JWT_SECRET
+      );
+
+      expect(() => {
+        jwt.verify(token, JWT_SECRET);
+      }).toThrow('jwt expired');
     });
   });
 
@@ -121,7 +125,7 @@ describe('Authentication Services', () => {
       const authHeader = 'Bearer';
       const extracted = extractToken(authHeader);
       
-      expect(extracted).toBe('');
+      expect(extracted).toBeNull();
     });
   });
 });

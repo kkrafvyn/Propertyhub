@@ -1,45 +1,85 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { toast } from "sonner";
-import { Bell, BellOff, MessageCircle, Users, User, Smartphone, Monitor, Tablet } from 'lucide-react';
-import { User as UserType, ChatMessage, ChatRoom } from '../types';
-import { projectId, publicAnonKey } from '../services/supabaseProject';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import {
+  Bell,
+  BellOff,
+  MessageCircle,
+  Monitor,
+  Smartphone,
+  Tablet,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import type { ChatMessage, ChatRoom, User as UserType } from '../types';
+import {
+  ensurePushPermission,
+  getNotificationPermissionState,
+  isNativePlatform,
+  nativePlatform,
+  registerNativePush,
+  showLocalNotification,
+  unregisterNativePush,
+  type NativePushRegistration,
+} from '../services/nativeCapabilities';
+import { getSupabaseFunctionUrl, publicAnonKey } from '../services/supabaseProject';
 import { useAuth } from './auth/AuthProvider';
 
-interface StoredPushSubscription {
-  endpoint: string;
-  keys: {
-    p256dh: string;
-    auth: string;
+type StoredPushSubscription = {
+  endpoint?: string;
+  keys?: {
+    p256dh?: string;
+    auth?: string;
   };
-}
+};
 
-interface DeviceInfo {
+type DeviceInfo = {
   id: string;
   name: string;
   type: 'mobile' | 'desktop' | 'tablet';
-  subscription: StoredPushSubscription;
+  subscription?: StoredPushSubscription;
+  token?: string;
+  platform?: string;
   userAgent: string;
   lastSeen: string;
   isActive: boolean;
-}
+};
 
-interface PushNotificationContextType {
+export type InboxNotification = {
+  body: string;
+  createdAt: string;
+  data: Record<string, unknown>;
+  id: string;
+  read: boolean;
+  title: string;
+  type: string;
+};
+
+type PushNotificationContextType = {
   isSupported: boolean;
   permission: NotificationPermission;
   isEnabled: boolean;
   isSubscribed: boolean;
   devices: DeviceInfo[];
+  notifications: InboxNotification[];
+  unreadCount: number;
+  loadingNotifications: boolean;
   requestPermission: () => Promise<boolean>;
   subscribe: () => Promise<boolean>;
   unsubscribe: () => Promise<boolean>;
   showNotification: (title: string, options?: NotificationOptions) => void;
   toggleNotifications: () => void;
-  subscribeToMessages: (userId: string) => void;
+  subscribeToMessages: (_userId: string) => void;
   unsubscribeFromMessages: () => void;
   sendTestNotification: () => Promise<void>;
   refreshDevices: () => Promise<void>;
   removeDevice: (deviceId: string) => Promise<void>;
-  // New comprehensive notification methods
   sendChatNotification: (data: ChatNotificationData) => Promise<void>;
   sendBookingNotification: (data: BookingNotificationData) => Promise<void>;
   sendPropertyNotification: (data: PropertyNotificationData) => Promise<void>;
@@ -48,12 +88,13 @@ interface PushNotificationContextType {
   sendHostNotification: (data: HostNotificationData) => Promise<void>;
   sendManagerNotification: (data: ManagerNotificationData) => Promise<void>;
   getNotifications: (options?: GetNotificationOptions) => Promise<any[]>;
+  refreshNotificationInbox: () => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   markAllNotificationsAsRead: () => Promise<void>;
   deleteNotification: (notificationId: string) => Promise<void>;
-}
+};
 
-interface ChatNotificationData {
+type ChatNotificationData = {
   userId: string;
   senderId: string;
   senderName: string;
@@ -63,70 +104,95 @@ interface ChatNotificationData {
   roomType: string;
   messageContent: string;
   messageType: string;
-}
+};
 
-interface BookingNotificationData {
+type BookingNotificationData = {
   userId: string;
-  hostId?: string;
   propertyId: string;
   propertyTitle: string;
   bookingId: string;
-  notificationType: 'booking_request' | 'booking_accepted' | 'booking_declined' | 'booking_confirmed' | 'payment_received' | 'payment_reminder' | 'checkin_reminder' | 'checkout_reminder' | 'review_request';
+  notificationType:
+    | 'booking_request'
+    | 'booking_accepted'
+    | 'booking_declined'
+    | 'booking_confirmed'
+    | 'payment_received'
+    | 'payment_reminder'
+    | 'checkin_reminder'
+    | 'checkout_reminder'
+    | 'review_request';
   amount?: number;
   dueDate?: string;
   checkinDate?: string;
   checkoutDate?: string;
-}
+};
 
-interface PropertyNotificationData {
+type PropertyNotificationData = {
   userId: string;
   propertyId: string;
   propertyTitle: string;
-  updateType: 'price_change' | 'new_booking' | 'booking_confirmed' | 'booking_cancelled' | 'payment_reminder' | 'availability_change';
+  updateType:
+    | 'price_change'
+    | 'new_booking'
+    | 'booking_confirmed'
+    | 'booking_cancelled'
+    | 'payment_reminder'
+    | 'availability_change';
   message?: string;
-}
+};
 
-interface AdminNotificationData {
+type AdminNotificationData = {
   targetRole?: string;
   userIds?: string[];
   title: string;
   body: string;
   notificationType?: string;
-  data?: any;
-}
+  data?: Record<string, unknown>;
+};
 
-interface SystemAnnouncementData {
+type SystemAnnouncementData = {
   title: string;
   body: string;
   priority?: 'low' | 'normal' | 'high' | 'urgent';
   targetRoles?: string[];
   excludeRoles?: string[];
-}
+};
 
-interface HostNotificationData {
+type HostNotificationData = {
   hostId: string;
-  notificationType: 'new_inquiry' | 'booking_request' | 'payment_received' | 'review_received' | 'property_performance' | 'calendar_update';
+  notificationType:
+    | 'new_inquiry'
+    | 'booking_request'
+    | 'payment_received'
+    | 'review_received'
+    | 'property_performance'
+    | 'calendar_update';
   propertyId?: string;
   propertyTitle?: string;
   guestName?: string;
   amount?: number;
-  data?: any;
-}
+  data?: Record<string, unknown>;
+};
 
-interface ManagerNotificationData {
+type ManagerNotificationData = {
   managerId: string;
-  notificationType: 'property_assigned' | 'property_removed' | 'maintenance_request' | 'booking_issue' | 'performance_alert';
+  notificationType:
+    | 'property_assigned'
+    | 'property_removed'
+    | 'maintenance_request'
+    | 'booking_issue'
+    | 'performance_alert';
   propertyId?: string;
   propertyTitle?: string;
   assignedBy?: string;
-  data?: any;
-}
+  data?: Record<string, unknown>;
+};
 
-interface GetNotificationOptions {
+type GetNotificationOptions = {
   limit?: number;
   unreadOnly?: boolean;
   type?: string;
-}
+};
 
 const PushNotificationContext = createContext<PushNotificationContextType | undefined>(undefined);
 
@@ -135,821 +201,703 @@ interface PushNotificationProviderProps {
   currentUser?: UserType | null;
 }
 
-export function PushNotificationProvider({ children, currentUser: providedUser }: PushNotificationProviderProps) {
+const pushStorageKey = 'propertyhub.notifications.enabled';
+
+const getDeviceInfo = (): Pick<DeviceInfo, 'name' | 'type' | 'userAgent'> => {
+  const userAgent = navigator.userAgent;
+
+  if (isNativePlatform()) {
+    return {
+      name: nativePlatform() === 'ios' ? 'iPhone App' : 'Android App',
+      type: 'mobile',
+      userAgent,
+    };
+  }
+
+  if (/iPad/i.test(userAgent)) {
+    return { name: 'iPad Browser', type: 'tablet', userAgent };
+  }
+
+  if (/Android/i.test(userAgent) && !/Mobile/i.test(userAgent)) {
+    return { name: 'Android Tablet', type: 'tablet', userAgent };
+  }
+
+  if (/Android|iPhone|iPod|Mobile/i.test(userAgent)) {
+    return { name: 'Mobile Browser', type: 'mobile', userAgent };
+  }
+
+  return { name: 'Desktop Browser', type: 'desktop', userAgent };
+};
+
+const permissionToNotificationPermission = (value: string): NotificationPermission => {
+  if (value === 'granted' || value === 'denied') {
+    return value;
+  }
+
+  return 'default';
+};
+
+const buildHeaders = () => ({
+  'Content-Type': 'application/json',
+  Authorization: `Bearer ${publicAnonKey}`,
+});
+
+const createNotificationId = (): string =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `notification_${Date.now()}`;
+
+const normalizeNotification = (value: Record<string, any>): InboxNotification => ({
+  body:
+    typeof value.body === 'string'
+      ? value.body
+      : typeof value.message === 'string'
+        ? value.message
+        : '',
+  createdAt:
+    typeof value.createdAt === 'string'
+      ? value.createdAt
+      : typeof value.created_at === 'string'
+        ? value.created_at
+        : new Date().toISOString(),
+  data:
+    value.data && typeof value.data === 'object'
+      ? value.data
+      : value.metadata && typeof value.metadata === 'object'
+        ? value.metadata
+        : {},
+  id: typeof value.id === 'string' ? value.id : createNotificationId(),
+  read: Boolean(value.read),
+  title:
+    typeof value.title === 'string' && value.title.trim()
+      ? value.title
+      : 'PropertyHub',
+  type:
+    typeof value.type === 'string' && value.type.trim()
+      ? value.type
+      : 'system',
+});
+
+const pushApi = async <T = any>(
+  path: string,
+  options: RequestInit = {},
+  defaultError = 'Notification request failed.',
+): Promise<T> => {
+  const response = await fetch(getSupabaseFunctionUrl(path), {
+    ...options,
+    headers: {
+      ...buildHeaders(),
+      ...(options.headers || {}),
+    },
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || payload?.message || defaultError);
+  }
+
+  return (payload.data ?? payload) as T;
+};
+
+export function PushNotificationProvider({
+  children,
+  currentUser: providedUser,
+}: PushNotificationProviderProps) {
   const { user: authenticatedUser } = useAuth();
   const currentUser = providedUser ?? authenticatedUser;
-  const [isSupported] = useState(() => 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window);
-  const [permission, setPermission] = useState<NotificationPermission>(
-    isSupported ? Notification.permission : 'denied'
-  );
+
+  const isSupported = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    if (isNativePlatform()) return true;
+    return 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+  }, []);
+
+  const [permission, setPermission] = useState<NotificationPermission>('default');
   const [isEnabled, setIsEnabled] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
-  const [lastMessageIds, setLastMessageIds] = useState<Set<string>>(new Set());
-  const [serviceWorkerRegistration, setServiceWorkerRegistration] = useState<ServiceWorkerRegistration | null>(null);
+  const [notifications, setNotifications] = useState<InboxNotification[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
 
-  // Initialize service worker and check subscription status
+  const nativeRegistrationRef = useRef<NativePushRegistration | null>(null);
+  const currentDeviceIdRef = useRef<string | null>(null);
+  const unreadCount = useMemo(
+    () => notifications.filter((notification) => !notification.read).length,
+    [notifications],
+  );
+
+  const upsertNotification = useCallback((value: Record<string, any>) => {
+    const nextNotification = normalizeNotification(value);
+
+    setNotifications((previous) => {
+      const withoutDuplicate = previous.filter((notification) => notification.id !== nextNotification.id);
+      return [nextNotification, ...withoutDuplicate].sort(
+        (left, right) =>
+          new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+      );
+    });
+  }, []);
+
   useEffect(() => {
-    if (isSupported && currentUser) {
-      initializeServiceWorker();
-    }
-  }, [isSupported, currentUser]);
+    let cancelled = false;
 
-  // Check notification permission on mount
-  useEffect(() => {
-    if (isSupported) {
-      const savedPreference = localStorage.getItem('notifications-enabled');
-      setIsEnabled(savedPreference === 'true' && permission === 'granted');
-    }
-  }, [isSupported, permission]);
-
-  const initializeServiceWorker = async () => {
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      setServiceWorkerRegistration(registration);
-      
-      // Check if already subscribed
-      const subscription = await registration.pushManager.getSubscription();
-      if (subscription) {
-        setIsSubscribed(true);
-        await registerDevice(subscription);
+    const loadPermissionState = async () => {
+      if (!isSupported) {
+        setPermission('denied');
+        return;
       }
-      
-      // Listen for service worker messages
-      navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
-      
-      // Refresh devices list
-      await refreshDevices();
-    } catch (error) {
-      console.error('Error initializing service worker:', error);
-    }
-  };
 
-  const handleServiceWorkerMessage = (event: MessageEvent) => {
-    if (event.data.type === 'NOTIFICATION_CLICK') {
-      // Handle notification click actions
-      const { action, data } = event.data;
-      
-      switch (action) {
-        case 'reply':
-          // Navigate to chat room for reply
-          if (data.roomId) {
-            window.focus();
-            // Trigger navigation to chat with specific room
-            window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: { roomId: data.roomId } }));
-          }
-          break;
-        case 'view_property':
-          // Navigate to property details
-          if (data.propertyId) {
-            window.focus();
-            window.dispatchEvent(new CustomEvent('navigate-to-property', { detail: { propertyId: data.propertyId } }));
-          }
-          break;
-        case 'mark_read':
-          // Mark messages as read
-          if (data.roomId && currentUser) {
-            markRoomAsRead(data.roomId, currentUser.id);
-          }
-          break;
-        default:
-          // Default action - just focus window
-          window.focus();
-          break;
+      const nextPermission = permissionToNotificationPermission(
+        await getNotificationPermissionState(),
+      );
+
+      if (!cancelled) {
+        setPermission(nextPermission);
       }
-    }
-  };
-
-  const getDeviceInfo = (): Omit<DeviceInfo, 'id' | 'subscription' | 'lastSeen' | 'isActive'> => {
-    const userAgent = navigator.userAgent;
-    let deviceType: 'mobile' | 'desktop' | 'tablet' = 'desktop';
-    let deviceName = 'Unknown Device';
-
-    // Detect device type
-    if (/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)) {
-      if (/iPad/i.test(userAgent)) {
-        deviceType = 'tablet';
-        deviceName = 'iPad';
-      } else if (/iPhone/i.test(userAgent)) {
-        deviceType = 'mobile';
-        deviceName = 'iPhone';
-      } else if (/Android/i.test(userAgent)) {
-        deviceType = /Mobile/i.test(userAgent) ? 'mobile' : 'tablet';
-        deviceName = deviceType === 'mobile' ? 'Android Phone' : 'Android Tablet';
-      } else {
-        deviceType = 'mobile';
-        deviceName = 'Mobile Device';
-      }
-    } else {
-      // Desktop browsers
-      if (/Chrome/i.test(userAgent)) {
-        deviceName = 'Chrome Browser';
-      } else if (/Firefox/i.test(userAgent)) {
-        deviceName = 'Firefox Browser';
-      } else if (/Safari/i.test(userAgent)) {
-        deviceName = 'Safari Browser';
-      } else if (/Edge/i.test(userAgent)) {
-        deviceName = 'Edge Browser';
-      } else {
-        deviceName = 'Desktop Browser';
-      }
-    }
-
-    return {
-      name: deviceName,
-      type: deviceType,
-      userAgent
     };
-  };
 
-  const registerDevice = async (subscription: globalThis.PushSubscription) => {
-    if (!currentUser) return;
+    void loadPermissionState();
 
-    try {
-      const deviceInfo = getDeviceInfo();
-      const serializedSubscription = subscription.toJSON() as StoredPushSubscription;
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/devices`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          subscription: {
-            endpoint: serializedSubscription.endpoint,
-            keys: {
-              p256dh: serializedSubscription.keys?.p256dh || '',
-              auth: serializedSubscription.keys?.auth || ''
-            }
-          },
-          ...deviceInfo
-        }),
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-    } catch (error) {
-      console.error('Error registering device:', error);
+    const savedPreference = localStorage.getItem(pushStorageKey) === 'true';
+    if (!cancelled) {
+      setIsEnabled(savedPreference);
     }
-  };
 
-  const refreshDevices = async () => {
-    if (!currentUser) return;
+    return () => {
+      cancelled = true;
+    };
+  }, [isSupported]);
+
+  const refreshDevices = useCallback(async () => {
+    if (!currentUser) {
+      setDevices([]);
+      return;
+    }
 
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/devices/${currentUser.id}`, {
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-      });
+      const result = await pushApi<{ success: boolean; devices: DeviceInfo[] }>(
+        `push/devices/${currentUser.id}`,
+        { method: 'GET' },
+        'Unable to load registered devices.',
+      );
 
-      const result = await response.json();
-      if (result.success) {
-        setDevices(result.devices);
-      }
+      setDevices(result.devices || []);
+      setIsSubscribed((result.devices || []).length > 0 || Boolean(currentDeviceIdRef.current));
     } catch (error) {
       console.error('Error fetching devices:', error);
     }
-  };
+  }, [currentUser]);
 
-  const removeDevice = async (deviceId: string) => {
-    if (!currentUser) return;
+  useEffect(() => {
+    if (currentUser) {
+      void refreshDevices();
+    }
+  }, [currentUser, refreshDevices]);
+
+  const refreshNotificationInbox = useCallback(async () => {
+    if (!currentUser) {
+      setNotifications([]);
+      return;
+    }
 
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/devices/${deviceId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-      });
+      setLoadingNotifications(true);
+      const result = await pushApi<{ success: boolean; notifications: Record<string, any>[] }>(
+        `notifications/${currentUser.id}?limit=50`,
+        { method: 'GET' },
+        'Unable to load notifications.',
+      );
 
-      const result = await response.json();
-      if (result.success) {
-        await refreshDevices();
-        toast.success('Device removed successfully');
-      }
+      setNotifications((result.notifications || []).map(normalizeNotification));
     } catch (error) {
-      console.error('Error removing device:', error);
-      toast.error('Failed to remove device');
+      console.error('Error fetching notification inbox:', error);
+    } finally {
+      setLoadingNotifications(false);
     }
-  };
+  }, [currentUser]);
 
-  const markRoomAsRead = async (roomId: string, userId: string) => {
-    try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/chat/rooms/${roomId}/read/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        console.error('Failed to mark room as read:', result.error);
-      }
-    } catch (error) {
-      console.error('Error marking room as read:', error);
+  useEffect(() => {
+    if (currentUser) {
+      void refreshNotificationInbox();
+    } else {
+      setNotifications([]);
     }
-  };
+  }, [currentUser, refreshNotificationInbox]);
 
-  // Request permission
-  const requestPermission = async (): Promise<boolean> => {
+  const requestPermission = useCallback(async () => {
     if (!isSupported) {
-      toast.error('Push notifications are not supported in this browser');
+      toast.error('Notifications are not supported on this device.');
       return false;
     }
 
-    if (permission === 'granted') {
-      setIsEnabled(true);
-      localStorage.setItem('notifications-enabled', 'true');
-      return true;
-    }
-
     try {
-      const result = await Notification.requestPermission();
-      setPermission(result);
-      
-      if (result === 'granted') {
-        setIsEnabled(true);
-        localStorage.setItem('notifications-enabled', 'true');
-        toast.success('Notifications enabled!');
-        return true;
+      const granted = await ensurePushPermission();
+      const nextPermission = permissionToNotificationPermission(
+        await getNotificationPermissionState(),
+      );
+      setPermission(nextPermission);
+
+      if (granted) {
+        toast.success('Notifications enabled.');
       } else {
-        toast.error('Notification permission denied');
-        return false;
+        toast.error('Notification permission was denied.');
       }
+
+      return granted;
     } catch (error) {
       console.error('Error requesting notification permission:', error);
-      toast.error('Failed to request notification permission');
+      toast.error('Unable to request notification permission.');
       return false;
     }
-  };
+  }, [isSupported]);
 
-  // Subscribe to push notifications
-  const subscribe = async (): Promise<boolean> => {
-    if (!serviceWorkerRegistration || !currentUser) {
-      toast.error('Service worker not ready or user not logged in');
-      return false;
-    }
-
-    try {
-      // Request permission first
-      const hasPermission = await requestPermission();
-      if (!hasPermission) return false;
-
-      // Get VAPID public key from server
-      const vapidResponse = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/vapid-key`, {
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-      });
-      
-      const vapidResult = await vapidResponse.json();
-      if (!vapidResult.success) {
-        throw new Error('Failed to get VAPID key');
+  const registerDevice = useCallback(
+    async (payload: {
+      subscription?: StoredPushSubscription;
+      token?: string;
+      platform?: string;
+    }) => {
+      if (!currentUser) {
+        throw new Error('You need to be logged in to register this device.');
       }
 
-      // Subscribe to push notifications
-      const subscription = await serviceWorkerRegistration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidResult.publicKey)
-      });
+      const result = await pushApi<{ success: boolean; device: DeviceInfo }>(
+        'push/devices',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            userId: currentUser.id,
+            ...payload,
+            ...getDeviceInfo(),
+          }),
+        },
+        'Unable to register this device for notifications.',
+      );
 
-      // Register device with server
-      await registerDevice(subscription);
-      
-      setIsSubscribed(true);
-      toast.success('Successfully subscribed to push notifications');
-      
-      return true;
-    } catch (error) {
-      console.error('Error subscribing to push notifications:', error);
-      toast.error('Failed to subscribe to push notifications');
+      currentDeviceIdRef.current = result.device.id;
+      return result.device;
+    },
+    [currentUser],
+  );
+
+  const subscribe = useCallback(async (): Promise<boolean> => {
+    if (!currentUser) {
+      toast.error('Please log in before enabling notifications.');
       return false;
     }
-  };
 
-  // Unsubscribe from push notifications
-  const unsubscribe = async (): Promise<boolean> => {
-    if (!serviceWorkerRegistration) return false;
+    const allowed = await requestPermission();
+    if (!allowed) {
+      return false;
+    }
 
     try {
-      const subscription = await serviceWorkerRegistration.pushManager.getSubscription();
-      if (subscription) {
-        await subscription.unsubscribe();
-        
-        // Remove device from server
-        if (currentUser) {
-          const deviceInfo = getDeviceInfo();
-          const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/devices/unsubscribe`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${publicAnonKey}`,
+      if (isNativePlatform()) {
+        if (!nativeRegistrationRef.current) {
+          nativeRegistrationRef.current = await registerNativePush({
+            onNotification: (notification) => {
+              upsertNotification({
+                body: notification.body,
+                data: notification.data || {},
+                id:
+                  typeof notification.id === 'string' || typeof notification.id === 'number'
+                    ? String(notification.id)
+                    : createNotificationId(),
+                read: false,
+                title: notification.title,
+                type:
+                  typeof notification.data?.type === 'string'
+                    ? notification.data.type
+                    : 'system',
+              });
+              void showLocalNotification({
+                title: notification.title,
+                body: notification.body,
+                data: notification.data || {},
+              });
             },
-            body: JSON.stringify({
-              userId: currentUser.id,
-              endpoint: subscription.endpoint
-            }),
+            onAction: (action) => {
+              const detail = action.notification.data || {};
+
+              if (detail.roomId) {
+                window.dispatchEvent(
+                  new CustomEvent('navigate-to-chat', {
+                    detail: { roomId: String(detail.roomId) },
+                  }),
+                );
+              }
+
+              if (detail.propertyId) {
+                window.dispatchEvent(
+                  new CustomEvent('navigate-to-property', {
+                    detail: { propertyId: String(detail.propertyId) },
+                  }),
+                );
+              }
+            },
           });
         }
+
+        await registerDevice({
+          token: nativeRegistrationRef.current.token,
+          platform: nativeRegistrationRef.current.platform,
+        });
+      } else {
+        const registration =
+          (await navigator.serviceWorker.getRegistration()) ||
+          (await navigator.serviceWorker.register('/sw.js'));
+        const readyRegistration = await navigator.serviceWorker.ready;
+
+        const vapidResult = await pushApi<{ success: boolean; publicKey: string }>(
+          'push/vapid-key',
+          { method: 'GET' },
+          'Unable to load the web push public key.',
+        );
+
+        const existingSubscription = await readyRegistration.pushManager.getSubscription();
+        const subscription =
+          existingSubscription ||
+          (await readyRegistration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: (() => {
+              const padding = '='.repeat((4 - (vapidResult.publicKey.length % 4)) % 4);
+              const base64 = (vapidResult.publicKey + padding)
+                .replace(/-/g, '+')
+                .replace(/_/g, '/');
+              const rawData = window.atob(base64);
+              return Uint8Array.from([...rawData].map((character) => character.charCodeAt(0)));
+            })(),
+          }));
+
+        await registerDevice({
+          subscription: subscription.toJSON() as StoredPushSubscription,
+        });
       }
-      
-      setIsSubscribed(false);
-      toast.info('Unsubscribed from push notifications');
-      
+
+      localStorage.setItem(pushStorageKey, 'true');
+      setIsEnabled(true);
+      setIsSubscribed(true);
+      await refreshDevices();
+      await refreshNotificationInbox();
       return true;
     } catch (error) {
-      console.error('Error unsubscribing from push notifications:', error);
-      toast.error('Failed to unsubscribe');
+      console.error('Error subscribing to notifications:', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to enable notifications.');
       return false;
     }
-  };
+  }, [
+    currentUser,
+    refreshDevices,
+    refreshNotificationInbox,
+    registerDevice,
+    requestPermission,
+    upsertNotification,
+  ]);
 
-  // Helper function to convert VAPID key
-  const urlBase64ToUint8Array = (base64String: string) => {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
+  const removeDevice = useCallback(
+    async (deviceId: string) => {
+      try {
+        await pushApi(
+          `push/devices/${deviceId}`,
+          { method: 'DELETE' },
+          'Unable to remove this device.',
+        );
 
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
+        if (currentDeviceIdRef.current === deviceId) {
+          currentDeviceIdRef.current = null;
+          setIsSubscribed(false);
+        }
 
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  };
+        await refreshDevices();
+        toast.success('Device removed.');
+      } catch (error) {
+        console.error('Error removing device:', error);
+        toast.error(error instanceof Error ? error.message : 'Unable to remove device.');
+      }
+    },
+    [refreshDevices],
+  );
 
-  // Show notification
-  const showNotification = (title: string, options?: NotificationOptions) => {
-    if (!isSupported || !isEnabled || permission !== 'granted') {
-      return;
-    }
-
+  const unsubscribe = useCallback(async (): Promise<boolean> => {
     try {
-      const notification = new Notification(title, {
-        icon: '/icon-192x192.png',
-        badge: '/icon-192x192.png',
-        tag: 'propertyhub-notification',
-        requireInteraction: false,
-        silent: false,
-        ...options,
+      if (isNativePlatform()) {
+        if (nativeRegistrationRef.current) {
+          await nativeRegistrationRef.current.dispose();
+          nativeRegistrationRef.current = null;
+        }
+        await unregisterNativePush();
+      } else if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await subscription.unsubscribe();
+          await pushApi(
+            'push/devices/unsubscribe',
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                userId: currentUser?.id,
+                endpoint: subscription.endpoint,
+              }),
+            },
+            'Unable to unsubscribe this browser.',
+          );
+        }
+      }
+
+      if (currentDeviceIdRef.current) {
+        await removeDevice(currentDeviceIdRef.current);
+      }
+
+      localStorage.setItem(pushStorageKey, 'false');
+      setIsEnabled(false);
+      setIsSubscribed(false);
+      currentDeviceIdRef.current = null;
+      return true;
+    } catch (error) {
+      console.error('Error unsubscribing from notifications:', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to disable notifications.');
+      return false;
+    }
+  }, [currentUser?.id, removeDevice]);
+
+  const showNotification = useCallback(
+    (title: string, options?: NotificationOptions) => {
+      if (!isEnabled || permission !== 'granted') {
+        return;
+      }
+
+      upsertNotification({
+        body: options?.body || '',
+        data: (options?.data as Record<string, unknown>) || {},
+        read: false,
+        title,
+        type:
+          typeof (options?.data as Record<string, unknown> | undefined)?.type === 'string'
+            ? String((options?.data as Record<string, unknown>).type)
+            : 'system',
       });
 
-      // Auto-close after 5 seconds
-      setTimeout(() => {
-        notification.close();
-      }, 5000);
+      if (isNativePlatform()) {
+        void showLocalNotification({
+          title,
+          body: options?.body || '',
+          data: (options?.data as Record<string, unknown>) || {},
+        });
+        return;
+      }
 
-      // Handle click - focus window
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
+      try {
+        const notification = new Notification(title, {
+          icon: '/icon-192x192.png',
+          badge: '/icon-192x192.png',
+          ...options,
+        });
 
-    } catch (error) {
-      console.error('Error showing notification:', error);
-    }
-  };
+        window.setTimeout(() => notification.close(), 5000);
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      } catch (error) {
+        console.error('Error showing notification:', error);
+      }
+    },
+    [isEnabled, permission, upsertNotification],
+  );
 
-  // Send test notification
-  const sendTestNotification = async () => {
+  const sendTestNotification = useCallback(async () => {
     if (!currentUser) return;
 
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/test`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
+      const result = await pushApi<Record<string, any>>(
+        'push/test',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            userId: currentUser.id,
+            title: 'PropertyHub test notification',
+            body: 'Your device is ready for booking, chat, and property alerts.',
+            data: {
+              type: 'test',
+            },
+          }),
         },
-        body: JSON.stringify({
-          userId: currentUser.id,
-          title: 'Test Notification',
-          body: 'This is a test push notification from PropertyHub!',
-          icon: '/icon-192x192.png',
-        }),
-      });
+        'Unable to send a test notification.',
+      );
 
-      const result = await response.json();
-      if (result.success) {
-        toast.success('Test notification sent to all your devices');
-      } else {
-        throw new Error(result.error);
-      }
+      upsertNotification(result);
+      toast.success('Test notification sent.');
     } catch (error) {
       console.error('Error sending test notification:', error);
-      toast.error('Failed to send test notification');
+      toast.error(error instanceof Error ? error.message : 'Unable to send test notification.');
     }
-  };
+  }, [currentUser, upsertNotification]);
 
-  // Toggle notifications
-  const toggleNotifications = async () => {
-    if (!isSupported) {
-      toast.error('Push notifications are not supported in this browser');
-      return;
-    }
-
-    if (!isEnabled) {
-      // Enable notifications
-      const subscribed = await subscribe();
-      if (subscribed) {
-        setIsEnabled(true);
-        localStorage.setItem('notifications-enabled', 'true');
-      }
+  const toggleNotifications = useCallback(async () => {
+    if (isEnabled) {
+      await unsubscribe();
     } else {
-      // Disable notifications
-      const unsubscribed = await unsubscribe();
-      if (unsubscribed) {
-        setIsEnabled(false);
-        localStorage.setItem('notifications-enabled', 'false');
-      }
+      await subscribe();
     }
-  };
+  }, [isEnabled, subscribe, unsubscribe]);
 
-  // Subscribe to message notifications
-  const subscribeToMessages = (userId: string) => {
-    // This would typically connect to a WebSocket or polling service
-    // For now, we'll use localStorage events to simulate cross-tab notifications
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === `chat-new-message-${userId}` && event.newValue) {
-        try {
-          const messageData = JSON.parse(event.newValue);
-          const { message, room } = messageData;
-          
-          // Don't show notification for own messages
-          if (message.senderId === userId) return;
-          
-          // Don't show duplicate notifications
-          if (lastMessageIds.has(message.id)) return;
-          
-          setLastMessageIds(prev => new Set([...prev, message.id]));
-          
-          // Show notification
-          const title = room.type === 'direct' 
-            ? `${message.senderName}`
-            : `${message.senderName} in ${room.name}`;
-          
-          let body = message.content;
-          let icon = MessageCircle;
-          
-          if (message.type === 'image') {
-            body = '📷 Sent an image';
-          } else if (message.type === 'file') {
-            body = `📎 Sent a file: ${message.fileName || 'file'}`;
-          } else if (message.type === 'audio') {
-            body = '🎵 Sent an audio message';
-          } else if (message.type === 'video') {
-            body = '🎥 Sent a video';
-          }
+  const subscribeToMessages = useCallback((_userId: string) => {}, []);
+  const unsubscribeFromMessages = useCallback(() => {}, []);
 
-          showNotification(title, {
-            body,
-            icon: message.senderAvatar || '/icon-192x192.png',
-            tag: `message-${message.id}`,
-            data: {
-              roomId: room.id,
-              messageId: message.id,
-              senderId: message.senderId
-            },
-            actions: [
-              {
-                action: 'reply',
-                title: 'Reply',
-                icon: '/icon-192x192.png'
-              },
-              {
-                action: 'mark_read',
-                title: 'Mark as Read',
-                icon: '/icon-192x192.png'
-              }
-            ]
-          } as any);
-
-          // Also show toast if window is focused
-          if (document.hasFocus()) {
-            toast.info(`New message from ${message.senderName}`, {
-              description: body,
-              duration: 3000,
-            });
-          }
-
-        } catch (error) {
-          console.error('Error parsing message notification:', error);
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  };
-
-  const unsubscribeFromMessages = () => {
-    // Clean up any subscriptions
-    setLastMessageIds(new Set());
-  };
-
-  // Subscribe to messages when user is available
-  useEffect(() => {
-    if (currentUser && isEnabled) {
-      const cleanup = subscribeToMessages(currentUser.id);
-      return cleanup;
-    }
-  }, [currentUser, isEnabled]);
-
-  // New comprehensive notification methods
-
-  // Send chat notification
-  const sendChatNotification = async (data: ChatNotificationData) => {
-    try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/chat-message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      console.log('Chat notification sent successfully:', result);
-    } catch (error) {
-      console.error('Error sending chat notification:', error);
-      toast.error('Failed to send chat notification');
-    }
-  };
-
-  // Send booking notification
-  const sendBookingNotification = async (data: BookingNotificationData) => {
-    try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/booking-notification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      console.log('Booking notification sent successfully:', result);
-      toast.success('Booking notification sent');
-    } catch (error) {
-      console.error('Error sending booking notification:', error);
-      toast.error('Failed to send booking notification');
-    }
-  };
-
-  // Send property notification
-  const sendPropertyNotification = async (data: PropertyNotificationData) => {
-    try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/property-update`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      console.log('Property notification sent successfully:', result);
-      toast.success('Property notification sent');
-    } catch (error) {
-      console.error('Error sending property notification:', error);
-      toast.error('Failed to send property notification');
-    }
-  };
-
-  // Send admin notification
-  const sendAdminNotification = async (data: AdminNotificationData) => {
-    try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/admin-notification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      console.log('Admin notification sent successfully:', result);
-      toast.success(`Admin notification sent to ${result.sent} users`);
-    } catch (error) {
-      console.error('Error sending admin notification:', error);
-      toast.error('Failed to send admin notification');
-    }
-  };
-
-  // Send system announcement
-  const sendSystemAnnouncement = async (data: SystemAnnouncementData) => {
-    try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/system-announcement`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      console.log('System announcement sent successfully:', result);
-      toast.success(`System announcement sent to ${result.sent} users`);
-    } catch (error) {
-      console.error('Error sending system announcement:', error);
-      toast.error('Failed to send system announcement');
-    }
-  };
-
-  // Send host notification
-  const sendHostNotification = async (data: HostNotificationData) => {
-    try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/host-notification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      console.log('Host notification sent successfully:', result);
-      toast.success('Host notification sent');
-    } catch (error) {
-      console.error('Error sending host notification:', error);
-      toast.error('Failed to send host notification');
-    }
-  };
-
-  // Send manager notification
-  const sendManagerNotification = async (data: ManagerNotificationData) => {
-    try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/push/manager-notification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      console.log('Manager notification sent successfully:', result);
-      toast.success('Manager notification sent');
-    } catch (error) {
-      console.error('Error sending manager notification:', error);
-      toast.error('Failed to send manager notification');
-    }
-  };
-
-  // Get notifications for the current user
-  const getNotifications = async (options?: GetNotificationOptions) => {
-    if (!currentUser) return [];
-
-    try {
-      const queryParams = new URLSearchParams();
-      if (options?.limit) queryParams.append('limit', options.limit.toString());
-      if (options?.unreadOnly) queryParams.append('unread', 'true');
-      if (options?.type) queryParams.append('type', options.type);
-
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/notifications/${currentUser.id}?${queryParams}`, 
+  const postGenericNotification = useCallback(
+    async (
+      recipientUserId: string,
+      title: string,
+      body: string,
+      data: Record<string, unknown> = {},
+    ) => {
+      await pushApi(
+        'push/test',
         {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-          },
-        }
+          method: 'POST',
+          body: JSON.stringify({
+            userId: recipientUserId,
+            title,
+            body,
+            data,
+          }),
+        },
+        'Unable to queue this notification.',
       );
+    },
+    [],
+  );
 
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
+  const sendChatNotification = useCallback(
+    async (data: ChatNotificationData) => {
+      await postGenericNotification(
+        data.userId,
+        data.roomType === 'direct' ? data.senderName : `${data.senderName} in ${data.roomName}`,
+        data.messageContent,
+        {
+          roomId: data.roomId,
+          senderId: data.senderId,
+          messageType: data.messageType,
+        },
+      );
+    },
+    [postGenericNotification],
+  );
+
+  const sendBookingNotification = useCallback(
+    async (data: BookingNotificationData) => {
+      await postGenericNotification(
+        data.userId,
+        `Booking update for ${data.propertyTitle}`,
+        data.notificationType.replace(/_/g, ' '),
+        data,
+      );
+    },
+    [postGenericNotification],
+  );
+
+  const sendPropertyNotification = useCallback(
+    async (data: PropertyNotificationData) => {
+      await postGenericNotification(
+        data.userId,
+        `Property update for ${data.propertyTitle}`,
+        data.message || data.updateType.replace(/_/g, ' '),
+        data,
+      );
+    },
+    [postGenericNotification],
+  );
+
+  const sendAdminNotification = useCallback(
+    async (data: AdminNotificationData) => {
+      if (data.userIds?.length) {
+        await Promise.all(
+          data.userIds.map((userId) =>
+            postGenericNotification(userId, data.title, data.body, data.data || {}),
+          ),
+        );
       }
+    },
+    [postGenericNotification],
+  );
+
+  const sendSystemAnnouncement = useCallback(async (_data: SystemAnnouncementData) => {}, []);
+  const sendHostNotification = useCallback(async (_data: HostNotificationData) => {}, []);
+  const sendManagerNotification = useCallback(async (_data: ManagerNotificationData) => {}, []);
+
+  const getNotifications = useCallback(
+    async (options?: GetNotificationOptions) => {
+      if (!currentUser) return [];
+
+      const params = new URLSearchParams();
+      if (options?.limit) params.set('limit', String(options.limit));
+      if (options?.unreadOnly) params.set('unread', 'true');
+      if (options?.type) params.set('type', options.type);
+
+      const result = await pushApi<{ success: boolean; notifications: any[] }>(
+        `notifications/${currentUser.id}${params.toString() ? `?${params.toString()}` : ''}`,
+        { method: 'GET' },
+        'Unable to load notifications.',
+      );
 
       return result.notifications || [];
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-      return [];
-    }
-  };
+    },
+    [currentUser],
+  );
 
-  // Mark notification as read
-  const markNotificationAsRead = async (notificationId: string) => {
-    if (!currentUser) return;
+  const markNotificationAsRead = useCallback(
+    async (notificationId: string) => {
+      if (!currentUser) return;
 
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/notifications/${currentUser.id}/${notificationId}/read`, 
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-          },
-        }
+      await pushApi(
+        `notifications/${currentUser.id}/${notificationId}/read`,
+        { method: 'PUT' },
+        'Unable to mark notification as read.',
       );
 
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-      toast.error('Failed to mark notification as read');
-    }
-  };
+      setNotifications((previous) =>
+        previous.map((notification) =>
+          notification.id === notificationId
+            ? { ...notification, read: true }
+            : notification,
+        ),
+      );
+    },
+    [currentUser],
+  );
 
-  // Mark all notifications as read
-  const markAllNotificationsAsRead = async () => {
+  const markAllNotificationsAsRead = useCallback(async () => {
     if (!currentUser) return;
 
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/notifications/${currentUser.id}/read-all`, 
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-          },
-        }
+    await pushApi(
+      `notifications/${currentUser.id}/read-all`,
+      { method: 'PUT' },
+      'Unable to mark notifications as read.',
+    );
+
+    setNotifications((previous) =>
+      previous.map((notification) => ({ ...notification, read: true })),
+    );
+  }, [currentUser]);
+
+  const deleteNotification = useCallback(
+    async (notificationId: string) => {
+      if (!currentUser) return;
+
+      await pushApi(
+        `notifications/${currentUser.id}/${notificationId}`,
+        { method: 'DELETE' },
+        'Unable to delete notification.',
       );
 
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      toast.success(`Marked ${result.updated} notifications as read`);
-    } catch (error) {
-      console.error('Error marking all notifications as read:', error);
-      toast.error('Failed to mark all notifications as read');
-    }
-  };
-
-  // Delete notification
-  const deleteNotification = async (notificationId: string) => {
-    if (!currentUser) return;
-
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-8669f8c6/notifications/${currentUser.id}/${notificationId}`, 
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-          },
-        }
+      setNotifications((previous) =>
+        previous.filter((notification) => notification.id !== notificationId),
       );
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      
-      toast.success('Notification deleted');
-    } catch (error) {
-      console.error('Error deleting notification:', error);
-      toast.error('Failed to delete notification');
-    }
-  };
+    },
+    [currentUser],
+  );
 
   const value: PushNotificationContextType = {
     isSupported,
@@ -957,6 +905,9 @@ export function PushNotificationProvider({ children, currentUser: providedUser }
     isEnabled,
     isSubscribed,
     devices,
+    notifications,
+    unreadCount,
+    loadingNotifications,
     requestPermission,
     subscribe,
     unsubscribe,
@@ -967,7 +918,6 @@ export function PushNotificationProvider({ children, currentUser: providedUser }
     sendTestNotification,
     refreshDevices,
     removeDevice,
-    // New comprehensive notification methods
     sendChatNotification,
     sendBookingNotification,
     sendPropertyNotification,
@@ -976,6 +926,7 @@ export function PushNotificationProvider({ children, currentUser: providedUser }
     sendHostNotification,
     sendManagerNotification,
     getNotifications,
+    refreshNotificationInbox,
     markNotificationAsRead,
     markAllNotificationsAsRead,
     deleteNotification,
@@ -996,44 +947,43 @@ export function usePushNotifications() {
   return context;
 }
 
-// Enhanced notification settings component with device management
 export function NotificationSettings() {
-  const { 
-    isSupported, 
-    permission, 
-    isEnabled, 
-    isSubscribed, 
-    devices, 
-    toggleNotifications, 
-    sendTestNotification, 
-    refreshDevices, 
-    removeDevice 
+  const {
+    isSupported,
+    permission,
+    isEnabled,
+    isSubscribed,
+    devices,
+    toggleNotifications,
+    sendTestNotification,
+    refreshDevices,
+    removeDevice,
   } = usePushNotifications();
 
   useEffect(() => {
-    refreshDevices();
-  }, []);
+    void refreshDevices();
+  }, [refreshDevices]);
 
-  const getDeviceIcon = (type: string) => {
+  const getDeviceIcon = (type: DeviceInfo['type']) => {
     switch (type) {
       case 'mobile':
-        return <Smartphone className="w-4 h-4" />;
+        return <Smartphone className="h-4 w-4" />;
       case 'tablet':
-        return <Tablet className="w-4 h-4" />;
+        return <Tablet className="h-4 w-4" />;
       default:
-        return <Monitor className="w-4 h-4" />;
+        return <Monitor className="h-4 w-4" />;
     }
   };
 
   if (!isSupported) {
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
-          <BellOff className="w-5 h-5 text-muted-foreground" />
+        <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-4">
+          <BellOff className="h-5 w-5 text-muted-foreground" />
           <div>
-            <p className="font-medium">Push notifications not supported</p>
+            <p className="font-medium">Notifications not supported</p>
             <p className="text-sm text-muted-foreground">
-              Your browser doesn't support push notifications
+              This environment does not expose push notifications.
             </p>
           </div>
         </div>
@@ -1043,81 +993,92 @@ export function NotificationSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Main toggle */}
-      <div className="flex items-center justify-between p-4 bg-card border rounded-lg">
+      <div className="flex items-center justify-between rounded-lg border bg-card p-4">
         <div className="flex items-center gap-3">
           {isEnabled ? (
-            <Bell className="w-5 h-5 text-primary" />
+            <Bell className="h-5 w-5 text-primary" />
           ) : (
-            <BellOff className="w-5 h-5 text-muted-foreground" />
+            <BellOff className="h-5 w-5 text-muted-foreground" />
           )}
           <div>
             <p className="font-medium">Push Notifications</p>
             <p className="text-sm text-muted-foreground">
-              Get notified across all your devices
+              Receive chat, booking, and property alerts on this device
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2">
-          {isEnabled && (
+          {isEnabled ? (
             <button
-              onClick={sendTestNotification}
-              className="px-3 py-1 text-xs bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
+              type="button"
+              onClick={() => {
+                void sendTestNotification();
+              }}
+              className="rounded-md bg-secondary px-3 py-1 text-xs text-secondary-foreground transition-colors hover:bg-secondary/80"
             >
               Test
             </button>
-          )}
+          ) : null}
           <button
-            onClick={toggleNotifications}
-            className={`
-              relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-              ${isEnabled ? 'bg-primary' : 'bg-muted-foreground'}
-            `}
+            type="button"
+            onClick={() => {
+              void toggleNotifications();
+            }}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              isEnabled ? 'bg-primary' : 'bg-muted-foreground'
+            }`}
           >
             <span
-              className={`
-                inline-block h-4 w-4 transform rounded-full bg-white transition-transform
-                ${isEnabled ? 'translate-x-6' : 'translate-x-1'}
-              `}
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                isEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
             />
           </button>
         </div>
       </div>
 
-      {/* Device management */}
-      {isEnabled && (
-        <div className="bg-card border rounded-lg p-4">
-          <div className="flex items-center justify-between mb-4">
+      {isEnabled ? (
+        <div className="rounded-lg border bg-card p-4">
+          <div className="mb-4 flex items-center justify-between">
             <h3 className="font-medium">Connected Devices</h3>
             <button
-              onClick={refreshDevices}
+              type="button"
+              onClick={() => {
+                void refreshDevices();
+              }}
               className="text-sm text-primary hover:underline"
             >
               Refresh
             </button>
           </div>
-          
+
           {devices.length > 0 ? (
             <div className="space-y-3">
               {devices.map((device) => (
-                <div key={device.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div
+                  key={device.id}
+                  className="flex items-center justify-between rounded-lg bg-muted/50 p-3"
+                >
                   <div className="flex items-center gap-3">
                     {getDeviceIcon(device.type)}
                     <div>
-                      <p className="font-medium text-sm">{device.name}</p>
+                      <p className="text-sm font-medium">{device.name}</p>
                       <p className="text-xs text-muted-foreground">
                         Last seen: {new Date(device.lastSeen).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
-                    {device.isActive && (
-                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                    )}
+                    {device.isActive ? (
+                      <span className="h-2 w-2 rounded-full bg-green-500" />
+                    ) : null}
                     <button
-                      onClick={() => removeDevice(device.id)}
+                      type="button"
+                      onClick={() => {
+                        void removeDevice(device.id);
+                      }}
                       className="text-xs text-destructive hover:underline"
                     >
                       Remove
@@ -1128,30 +1089,23 @@ export function NotificationSettings() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No devices connected. Enable notifications to register this device.
+              No devices registered yet. Enable notifications to register this device.
             </p>
           )}
         </div>
-      )}
+      ) : null}
 
-      {/* Notification status */}
-      <div className="bg-muted/30 rounded-lg p-4">
-        <h4 className="font-medium mb-2">Status</h4>
+      <div className="rounded-lg bg-muted/30 p-4">
+        <h4 className="mb-2 font-medium">Status</h4>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span>Browser support:</span>
-            <span className={isSupported ? 'text-green-600' : 'text-red-600'}>
-              {isSupported ? 'Supported' : 'Not supported'}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span>Permission:</span>
+            <span>Permission</span>
             <span className={permission === 'granted' ? 'text-green-600' : 'text-orange-600'}>
               {permission.charAt(0).toUpperCase() + permission.slice(1)}
             </span>
           </div>
           <div className="flex justify-between">
-            <span>Subscription:</span>
+            <span>Subscription</span>
             <span className={isSubscribed ? 'text-green-600' : 'text-orange-600'}>
               {isSubscribed ? 'Active' : 'Inactive'}
             </span>

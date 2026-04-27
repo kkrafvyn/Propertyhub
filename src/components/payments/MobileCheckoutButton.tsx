@@ -13,7 +13,6 @@
  */
 
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
 import { 
   CreditCard, 
   Smartphone, 
@@ -29,7 +28,6 @@ import {
 // Components
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { Separator } from '../ui/separator';
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -57,29 +55,29 @@ const QUICK_ACTIONS = {
   purchase: {
     label: 'Buy Now',
     icon: Home,
-    color: 'bg-blue-500 hover:bg-blue-600',
-    textColor: 'text-white',
+    color: 'btn-primary',
+    textColor: '',
     description: 'Purchase this property'
   },
   rent: {
     label: 'Rent',
     icon: Calendar,
-    color: 'bg-green-500 hover:bg-green-600',
-    textColor: 'text-white',
+    color: 'theme-success-badge hover:brightness-105',
+    textColor: '',
     description: 'Setup monthly rental'
   },
   lease: {
     label: 'Lease',
     icon: Home,
-    color: 'bg-purple-500 hover:bg-purple-600',
-    textColor: 'text-white',
+    color: 'theme-info-badge hover:brightness-105',
+    textColor: '',
     description: 'Setup annual lease'
   },
   booking: {
     label: 'Book Tour',
     icon: Calendar,
-    color: 'bg-orange-500 hover:bg-orange-600',
-    textColor: 'text-white',
+    color: 'theme-warning-badge hover:brightness-105',
+    textColor: '',
     description: 'Schedule property viewing'
   }
 } as const;
@@ -134,6 +132,7 @@ export function MobileCheckoutButton({
   const isMobile = useMobile();
   const propertyLocation = getLocationLabel(property.location);
   const propertyPrice = getPropertyPrice(property);
+  const currencyLabel = property.pricing?.currency || property.currency || 'GHS';
   const isAvailable = property.available ?? property.status === 'available';
   
   // ========================================
@@ -185,8 +184,6 @@ export function MobileCheckoutButton({
     
     onCheckoutOpen(transactionType);
     setIsDropdownOpen(false);
-    
-    console.log(`🛒 Opening checkout for ${transactionType} - ₦${formatPrice(getTransactionAmount(transactionType))}`);
   };
   
   const handleQuickPayment = (): void => {
@@ -207,7 +204,7 @@ export function MobileCheckoutButton({
   const renderCompactButton = (): React.ReactElement => (
     <Button
       onClick={() => handleCheckoutClick(defaultTransactionType)}
-      className={`${primaryAction.color} ${primaryAction.textColor} touch-target`}
+      className={`${primaryAction.color} ${primaryAction.textColor} touch-target rounded-full border-0`}
       size={isMobile ? 'lg' : 'default'}
       disabled={!isAvailable}
     >
@@ -222,12 +219,12 @@ export function MobileCheckoutButton({
       <div className="flex gap-2">
         <Button
           onClick={() => handleCheckoutClick(defaultTransactionType)}
-          className={`${primaryAction.color} ${primaryAction.textColor} flex-1 touch-target`}
+          className={`${primaryAction.color} ${primaryAction.textColor} touch-target flex-1 rounded-full border-0`}
           size={isMobile ? 'lg' : 'default'}
           disabled={!isAvailable}
         >
           <PrimaryIcon className="w-4 h-4 mr-2" />
-          {primaryAction.label} - ₦{formatPrice(getTransactionAmount(defaultTransactionType))}
+          {primaryAction.label} - {currencyLabel} {formatPrice(getTransactionAmount(defaultTransactionType))}
         </Button>
         
         {/* More Options Dropdown */}
@@ -269,7 +266,7 @@ export function MobileCheckoutButton({
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-sm">₦{formatPrice(amount)}</p>
+                    <p className="font-semibold text-sm">{currencyLabel} {formatPrice(amount)}</p>
                   </div>
                 </DropdownMenuItem>
               );
@@ -311,14 +308,14 @@ export function MobileCheckoutButton({
   const renderExpandedButton = (): React.ReactElement => (
     <div className="space-y-4">
       {/* Property Quick Info */}
-      <div className="bg-muted/50 rounded-lg p-4">
+      <div className="air-surface-muted rounded-[24px] p-4">
         <div className="flex items-center justify-between">
           <div>
             <p className="font-medium line-clamp-1">{property.title}</p>
             <p className="text-sm text-muted-foreground">{propertyLocation}</p>
           </div>
           <div className="text-right">
-            <p className="font-semibold">₦{formatPrice(propertyPrice)}</p>
+            <p className="font-semibold">{currencyLabel} {formatPrice(propertyPrice)}</p>
             <Badge variant={isAvailable ? 'default' : 'secondary'} className="text-xs">
               {isAvailable ? 'Available' : 'Not Available'}
             </Badge>
@@ -337,9 +334,9 @@ export function MobileCheckoutButton({
               <button
                 key={method.id}
                 onClick={() => setSelectedPaymentMethod(method.id)}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  isSelected
-                    ? 'border-primary bg-primary/5'
+              className={`p-4 rounded-lg border-2 transition-all ${
+                isSelected
+                  ? 'border-primary bg-primary/5'
                     : 'border-border hover:border-primary/50'
                 }`}
               >
@@ -367,19 +364,19 @@ export function MobileCheckoutButton({
       <div className="space-y-2">
         <Button
           onClick={handleQuickPayment}
-          className="w-full touch-target bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 text-white"
+          className="btn-primary touch-target w-full rounded-full"
           size="lg"
           disabled={!isAvailable}
         >
           <Zap className="w-4 h-4 mr-2" />
-          Quick Pay with {selectedPaymentMethod === 'card' ? 'Card' : 'Mobile Money'}
+          Quick pay with {selectedPaymentMethod === 'card' ? 'card' : 'mobile money'}
         </Button>
         
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button 
               variant="outline" 
-              className="w-full touch-target" 
+              className="touch-target w-full rounded-full" 
               size="lg"
               disabled={!isAvailable}
             >
@@ -403,7 +400,7 @@ export function MobileCheckoutButton({
                     <IconComp className="w-4 h-4" />
                     <span>{config.label}</span>
                   </div>
-                  <span className="font-semibold">₦{formatPrice(amount)}</span>
+                  <span className="font-semibold">{currencyLabel} {formatPrice(amount)}</span>
                 </DropdownMenuItem>
               );
             })}
@@ -414,7 +411,7 @@ export function MobileCheckoutButton({
       {/* Security Notice */}
       <div className="flex items-center justify-center space-x-2 text-xs text-muted-foreground">
         <Lock className="w-3 h-3" />
-        <span>Secured by Paystack SSL encryption</span>
+        <span>Secured checkout with encrypted payment processing</span>
       </div>
     </div>
   );
@@ -428,11 +425,11 @@ export function MobileCheckoutButton({
       <Button
         onClick={onLoginRequired}
         variant="outline"
-        className="w-full touch-target"
+        className="touch-target w-full rounded-full"
         size={isMobile ? 'lg' : 'default'}
       >
         <UserIcon className="w-4 h-4 mr-2" />
-        Log in to Purchase
+        Log in to continue
       </Button>
     );
   }

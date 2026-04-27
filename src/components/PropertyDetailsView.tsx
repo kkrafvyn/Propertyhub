@@ -37,6 +37,7 @@ import { toast } from 'sonner';
 import { BrandMark } from './BrandMark';
 import { PropertyCard } from './PropertyCard';
 import { cn } from './ui/utils';
+import { shareContent } from '../services/nativeCapabilities';
 
 interface PropertyDetailsViewProps {
   selectedProperty: Property;
@@ -219,23 +220,26 @@ export function PropertyDetailsView({
 
   const handleShareListing = async (): Promise<void> => {
     try {
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        await navigator.share({
-          title: selectedProperty.title,
-          text: `Take a look at ${selectedProperty.title} on PropertyHub`,
-          url: shareUrl,
-        });
-        return;
-      }
+      await shareContent({
+        title: selectedProperty.title,
+        text: `Take a look at ${selectedProperty.title} on PropertyHub`,
+        url: shareUrl,
+        dialogTitle: 'Share listing',
+      });
 
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      toast.success('Listing ready to share.');
+    } catch (error) {
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.clipboard?.writeText &&
+        error instanceof Error &&
+        /sharing is not available/i.test(error.message)
+      ) {
         await navigator.clipboard.writeText(shareUrl);
         toast.success('Listing link copied to clipboard');
         return;
       }
 
-      toast.info(`Share this listing: ${shareUrl}`);
-    } catch (_error) {
       toast.error('We could not share this listing right now.');
     }
   };
@@ -264,7 +268,7 @@ export function PropertyDetailsView({
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background pb-32 pt-20 lg:pb-12">
+    <div className="min-h-[100dvh] bg-background pb-[calc(8rem+env(safe-area-inset-bottom))] pt-6 sm:pt-7 lg:pb-12 lg:pt-8">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Button
@@ -419,11 +423,23 @@ export function PropertyDetailsView({
                     ))}
 
                     {galleryImages.length <= 1 && (
-                      <div className="flex min-h-[154px] items-center justify-center rounded-[28px] border border-dashed border-border bg-secondary/70 p-6 text-center">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">More gallery views coming soon</p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            We will surface extra photos, tours, and media here as listings are expanded.
+                      <div className="grid min-h-[154px] gap-3 rounded-[28px] border border-border bg-secondary/70 p-4">
+                        <div className="rounded-[22px] bg-card/85 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            Availability window
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-foreground">
+                            {isAvailable
+                              ? `Open through ${formatReadableDate(availableUntil)}`
+                              : 'Next opening pending host confirmation'}
+                          </p>
+                        </div>
+                        <div className="rounded-[22px] bg-card/85 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                            At a glance
+                          </p>
+                          <p className="mt-2 text-sm text-foreground">
+                            {(amenityHighlights.slice(0, 3).join(' • ') || 'Verified listing • Protected checkout • Fast follow-up')}
                           </p>
                         </div>
                       </div>
@@ -787,7 +803,7 @@ export function PropertyDetailsView({
         )}
       </div>
 
-      <div className="fixed inset-x-3 bottom-[6.4rem] z-40 lg:hidden">
+      <div className="fixed inset-x-3 bottom-[calc(6.75rem+env(safe-area-inset-bottom))] z-40 lg:hidden">
         <div className="wire-navbar rounded-[26px] px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">

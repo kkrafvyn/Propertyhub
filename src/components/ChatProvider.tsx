@@ -1,7 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { ChatRoom, ChatMessage, User } from '../types';
-import { getSupabaseFunctionUrl } from '../services/supabaseProject';
 import { toast } from "sonner";
+import {
+  createChatRoom,
+  loadChatUsers,
+  loadRoomMessages,
+  loadUserRooms,
+  markRoomRead,
+  sendChatMessage,
+} from '../services/chatDataService';
 
 interface ChatContextType {
   rooms: ChatRoom[];
@@ -20,8 +27,6 @@ interface ChatContextType {
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
-
-type ChatBackendStatus = 'unknown' | 'available' | 'unavailable';
 
 const USER_STORAGE_KEYS = ['currentUser', 'propertyHubUser'] as const;
 
@@ -48,182 +53,82 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [backendStatus, setBackendStatus] = useState<ChatBackendStatus>('unknown');
-  const [backendWarningShown, setBackendWarningShown] = useState(false);
-
-  const serverUrl = getSupabaseFunctionUrl();
-
-  // Set current user when available (this should be set from the main app)
-  const updateCurrentUser = useCallback((user: User | null) => {
-    setCurrentUser(user);
-  }, []);
-
-  const markBackendUnavailable = useCallback((details?: string) => {
-    setBackendStatus('unavailable');
-
-    if (!backendWarningShown) {
-      setBackendWarningShown(true);
-      toast.warning('Chat backend is unavailable. Chat sync is paused until the server is deployed.');
-    }
-
-    if (details) {
-      console.warn('Chat backend unavailable:', details);
-    }
-  }, [backendWarningShown]);
-
-  const ensureBackendAvailable = useCallback(async () => {
-    if (backendStatus === 'available') return true;
-    if (backendStatus === 'unavailable') return false;
-
-    try {
-      const response = await fetch(getSupabaseFunctionUrl('health'));
-
-      if (!response.ok) {
-        markBackendUnavailable(`Health check returned ${response.status}`);
-        return false;
-      }
-
-      setBackendStatus('available');
-      return true;
-    } catch (error) {
-      markBackendUnavailable(error instanceof Error ? error.message : 'Unknown health check failure');
-      return false;
-    }
-  }, [backendStatus, markBackendUnavailable]);
 
   // Fetch available users for creating chats
   const fetchAvailableUsers = useCallback(async () => {
-    const backendReady = await ensureBackendAvailable();
-    if (!backendReady) return;
+    if (!currentUser) {
+      setAvailableUsers([]);
+      return;
+    }
 
     try {
-      // Use the new chat-eligible endpoint that respects booking relationships
-      const endpoint = currentUser?.role === 'admin' 
-        ? `${serverUrl}/users` // Admins can chat with anyone
-        : `${serverUrl}/users/${currentUser?.id}/chat-eligible`; // Others restricted by bookings
-        
-      const response = await fetch(endpoint);
-
-      if (!response.ok) {
-        markBackendUnavailable(`Users request returned ${response.status}`);
-        return;
-      }
-
-      const result = await response.json();
-      if (result.success) {
-        setAvailableUsers(result.users);
-      } else {
-        console.error('Failed to fetch available users:', result.error);
-      }
+      const users = await loadChatUsers(currentUser);
+      setAvailableUsers(users);
     } catch (error) {
-      markBackendUnavailable(error instanceof Error ? error.message : 'Failed to fetch available users');
+      console.error('Failed to fetch available users:', error);
+      setAvailableUsers([]);
     }
-  }, [ensureBackendAvailable, serverUrl, currentUser, markBackendUnavailable]);
+  }, [currentUser]);
 
   // Fetch chat rooms for current user
   const refreshRooms = useCallback(async () => {
     if (!currentUser) return;
-
-    const backendReady = await ensureBackendAvailable();
-    if (!backendReady) return;
     
     setLoading(true);
     try {
-      const response = await fetch(`${serverUrl}/chat/rooms/${currentUser.id}`);
-
-      if (!response.ok) {
-        markBackendUnavailable(`Rooms request returned ${response.status}`);
-        return;
-      }
-
-      const result = await response.json();
-      if (result.success) {
-        setRooms(result.rooms);
-      } else {
-        console.error('Failed to fetch rooms:', result.error);
-      }
+      const nextRooms = await loadUserRooms(currentUser);
+      setRooms(nextRooms);
     } catch (error) {
-      markBackendUnavailable(error instanceof Error ? error.message : 'Failed to load chat rooms');
+      console.error('Failed to load chat rooms:', error);
+      toast.error('Failed to load chat rooms');
     } finally {
       setLoading(false);
     }
-  }, [currentUser, ensureBackendAvailable, serverUrl, markBackendUnavailable]);
+  }, [currentUser]);
 
   // Load messages for a specific room
   const loadMessages = useCallback(async (roomId: string) => {
-    const backendReady = await ensureBackendAvailable();
-    if (!backendReady) return;
-
     try {
-      const response = await fetch(`${serverUrl}/chat/messages/${roomId}`);
-
-      if (!response.ok) {
-        markBackendUnavailable(`Messages request returned ${response.status}`);
-        return;
-      }
-
-      const result = await response.json();
-      if (result.success) {
-        setCurrentMessages(result.messages);
-      } else {
-        console.error('Failed to fetch messages:', result.error);
-      }
+      const messages = await loadRoomMessages(roomId);
+      setCurrentMessages(messages);
     } catch (error) {
-      markBackendUnavailable(error instanceof Error ? error.message : 'Failed to load messages');
+      console.error('Failed to load messages:', error);
+      toast.error('Failed to load messages');
     }
-  }, [ensureBackendAvailable, serverUrl, markBackendUnavailable]);
+  }, []);
 
   // Send a message
   const sendMessage = useCallback(async (roomId: string, content: string, type: 'text' | 'image' | 'file' | 'audio' | 'video' = 'text') => {
     if (!currentUser || !content.trim()) return;
 
-    const backendReady = await ensureBackendAvailable();
-    if (!backendReady) return;
-
     try {
-      const response = await fetch(`${serverUrl}/chat/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          roomId,
-          senderId: currentUser.id,
-          senderName: currentUser.name,
-          senderAvatar: currentUser.avatar,
-          content: content.trim(),
-          type,
-        }),
+      const message = await sendChatMessage({
+        roomId,
+        currentUser,
+        content: content.trim(),
+        type,
       });
 
-      if (!response.ok) {
-        markBackendUnavailable(`Send message request returned ${response.status}`);
+      if (!message) {
+        toast.error('Unable to send message');
         return;
       }
 
-      const result = await response.json();
-      if (result.success) {
-        // Add message to current messages if this is the active room
-        if (activeRoom === roomId) {
-          setCurrentMessages(prev => [...prev, result.message]);
-        }
-        // Refresh rooms to update last message and unread counts
-        await refreshRooms();
-      } else {
-        toast.error('Failed to send message');
-        console.error('Failed to send message:', result.error);
+      if (activeRoom === roomId) {
+        setCurrentMessages(prev => [...prev, message]);
       }
+
+      await refreshRooms();
     } catch (error) {
-      markBackendUnavailable(error instanceof Error ? error.message : 'Failed to send message');
+      console.error('Failed to send message:', error);
+      toast.error('Failed to send message');
+      throw error;
     }
-  }, [currentUser, ensureBackendAvailable, serverUrl, activeRoom, refreshRooms, markBackendUnavailable]);
+  }, [currentUser, activeRoom, refreshRooms]);
 
   // Send media message
   const sendMediaMessage = useCallback(async (roomId: string, file: File, fileUrl: string, content?: string, thumbnailUrl?: string) => {
     if (!currentUser) return;
-
-    const backendReady = await ensureBackendAvailable();
-    if (!backendReady) return;
 
     // Determine message type based on file type
     let messageType: 'image' | 'video' | 'audio' | 'file' = 'file';
@@ -236,49 +141,35 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const response = await fetch(`${serverUrl}/chat/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          roomId,
-          senderId: currentUser.id,
-          senderName: currentUser.name,
-          senderAvatar: currentUser.avatar,
-          content: content || '',
-          type: messageType,
-          fileUrl,
-          thumbnailUrl,
-          fileName: file.name,
-          fileSize: file.size,
-          mimeType: file.type,
-          // Add duration for audio/video files if available
-          ...(messageType === 'audio' || messageType === 'video' ? { duration: 0 } : {})
-        }),
+      const message = await sendChatMessage({
+        roomId,
+        currentUser,
+        content: content || '',
+        type: messageType,
+        fileUrl,
+        thumbnailUrl,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        ...(messageType === 'audio' || messageType === 'video' ? { duration: 0 } : {}),
       });
 
-      if (!response.ok) {
-        markBackendUnavailable(`Media message request returned ${response.status}`);
+      if (!message) {
+        toast.error('Unable to send media message');
         return;
       }
 
-      const result = await response.json();
-      if (result.success) {
-        // Add message to current messages if this is the active room
-        if (activeRoom === roomId) {
-          setCurrentMessages(prev => [...prev, result.message]);
-        }
-        // Refresh rooms to update last message and unread counts
-        await refreshRooms();
-      } else {
-        toast.error('Failed to send media message');
-        console.error('Failed to send media message:', result.error);
+      if (activeRoom === roomId) {
+        setCurrentMessages(prev => [...prev, message]);
       }
+
+      await refreshRooms();
     } catch (error) {
-      markBackendUnavailable(error instanceof Error ? error.message : 'Failed to send media message');
+      console.error('Failed to send media message:', error);
+      toast.error('Failed to send media message');
+      throw error;
     }
-  }, [currentUser, ensureBackendAvailable, serverUrl, activeRoom, refreshRooms, markBackendUnavailable]);
+  }, [currentUser, activeRoom, refreshRooms]);
 
   // Create a new chat room
   const createRoom = useCallback(async (
@@ -289,44 +180,29 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   ): Promise<ChatRoom | null> => {
     if (!currentUser) return null;
 
-    const backendReady = await ensureBackendAvailable();
-    if (!backendReady) return null;
-
     try {
-      const response = await fetch(`${serverUrl}/chat/rooms`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name,
-          type,
-          participants: [currentUser.id, ...participants],
-          createdBy: currentUser.id,
-          description,
-        }),
+      const room = await createChatRoom({
+        currentUser,
+        name,
+        type,
+        participants,
+        description,
       });
 
-      if (!response.ok) {
-        markBackendUnavailable(`Create room request returned ${response.status}`);
+      if (!room) {
+        toast.error('Failed to create chat room');
         return null;
       }
 
-      const result = await response.json();
-      if (result.success) {
-        await refreshRooms();
-        toast.success('Chat room created successfully');
-        return result.room;
-      } else {
-        toast.error('Failed to create chat room');
-        console.error('Failed to create room:', result.error);
-        return null;
-      }
+      await refreshRooms();
+      toast.success('Chat room created successfully');
+      return room;
     } catch (error) {
-      markBackendUnavailable(error instanceof Error ? error.message : 'Failed to create chat room');
+      console.error('Failed to create chat room:', error);
+      toast.error('Failed to create chat room');
       return null;
     }
-  }, [currentUser, ensureBackendAvailable, serverUrl, refreshRooms, markBackendUnavailable]);
+  }, [currentUser, refreshRooms]);
 
   // Create a direct message room
   const createDirectMessage = useCallback(async (otherUserId: string, otherUserName: string) => {
@@ -361,24 +237,31 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Mark room as read
   const markRoomAsRead = useCallback(async (roomId: string, userId: string) => {
-    const backendReady = await ensureBackendAvailable();
-    if (!backendReady) return;
-
     try {
-      const response = await fetch(`${serverUrl}/chat/rooms/${roomId}/read/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      await markRoomRead(roomId, userId);
+      setRooms((previousRooms) =>
+        previousRooms.map((room) => {
+          if (room.id !== roomId) return room;
+          if (typeof room.unreadCount === 'number') {
+            return {
+              ...room,
+              unreadCount: 0,
+            };
+          }
 
-      if (!response.ok) {
-        markBackendUnavailable(`Mark read request returned ${response.status}`);
-      }
+          return {
+            ...room,
+            unreadCount: {
+              ...(room.unreadCount || {}),
+              [userId]: 0,
+            },
+          };
+        })
+      );
     } catch (error) {
-      markBackendUnavailable(error instanceof Error ? error.message : 'Failed to mark room as read');
+      console.error('Failed to mark room as read:', error);
     }
-  }, [ensureBackendAvailable, serverUrl, markBackendUnavailable]);
+  }, []);
 
   // Handle active room change
   const handleActiveRoomChange = useCallback(async (roomId: string | null) => {
@@ -395,7 +278,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Set up polling for real-time updates (every 3 seconds)
   useEffect(() => {
-    if (!currentUser || backendStatus !== 'available') return;
+    if (!currentUser) return;
 
     const interval = setInterval(() => {
       void refreshRooms();
@@ -405,15 +288,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [currentUser, activeRoom, backendStatus, refreshRooms, loadMessages]);
+  }, [currentUser, activeRoom, refreshRooms, loadMessages]);
 
   // Load initial data when user changes
   useEffect(() => {
     if (currentUser) {
       void (async () => {
-        const backendReady = await ensureBackendAvailable();
-        if (!backendReady) return;
-
         await fetchAvailableUsers();
         await refreshRooms();
       })();
@@ -421,8 +301,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setRooms([]);
       setCurrentMessages([]);
       setActiveRoom(null);
+      setAvailableUsers([]);
     }
-  }, [currentUser, ensureBackendAvailable, fetchAvailableUsers, refreshRooms]);
+  }, [currentUser, fetchAvailableUsers, refreshRooms]);
 
   // Update current user from context (this needs to be called from the main app)
   useEffect(() => {
@@ -430,6 +311,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const user = readStoredUser();
       if (user && (!currentUser || currentUser.id !== user.id)) {
         setCurrentUser(user);
+      } else if (!user && currentUser) {
+        setCurrentUser(null);
       }
     };
     

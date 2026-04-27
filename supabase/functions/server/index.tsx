@@ -12,9 +12,29 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
 );
 
-// VAPID keys for push notifications (in production, these should be environment variables)
-const VAPID_PUBLIC_KEY = 'BKo1_5aDrC5zD3pGgXD0L6dRH1JGgZO_W9KzXBt8EWx2FZs3H8Qm0YWy7qQp9k8NzGJV4';
-const VAPID_PRIVATE_KEY = 'OyVt9QZ1kR3fzjXs7qWe6rT5yU8i9oP0a2sDfGhJkLmNpRtYwZcXvBnMqAsDeFlG';
+// Push notifications should read VAPID keys from Supabase function secrets.
+const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY') || '';
+const PAYSTACK_SECRET_KEY =
+  Deno.env.get('BACKEND_PAYSTACK_SECRET_KEY') ||
+  Deno.env.get('PAYSTACK_SECRET_KEY') ||
+  '';
+const FLUTTERWAVE_SECRET_KEY =
+  Deno.env.get('BACKEND_FLUTTERWAVE_SECRET_KEY') ||
+  Deno.env.get('FLUTTERWAVE_SECRET_KEY') ||
+  '';
+
+const paymentHeaders = (secret: string) => ({
+  Authorization: `Bearer ${secret}`,
+  "Content-Type": "application/json",
+});
+
+const jsonError = (c: any, error: string, status = 400) =>
+  c.json({ success: false, error }, status);
+
+const normalizeProviderResponse = async (response: Response) => {
+  const payload = await response.json().catch(() => null);
+  return { ok: response.ok, payload };
+};
 
 // Enable logger
 app.use('*', logger(console.log));
@@ -43,6 +63,155 @@ app.get("/make-server-8669f8c6/health", (c) => {
     version: "1.0.0"
   });
 });
+
+const initializePaymentHandler = async (c: any) => {
+  try {
+    const {
+      email,
+      amount,
+      currency = "GHS",
+      paymentMethod,
+      callback_url,
+      metadata = {},
+      tx_ref,
+    } = await c.req.json();
+
+    if (!email || typeof email !== "string") {
+      return jsonError(c, "A valid email is required.");
+    }
+
+    if (!amount || Number(amount) <= 0) {
+      return jsonError(c, "A valid amount is required.");
+    }
+
+    if (!paymentMethod || !["paystack", "flutterwave"].includes(paymentMethod)) {
+      return jsonError(c, "A supported payment method is required.");
+    }
+
+    if (paymentMethod === "paystack") {
+      if (!PAYSTACK_SECRET_KEY) {
+        return jsonError(c, "Paystack secret key is not configured.", 503);
+      }
+
+      const response = await fetch("https://api.paystack.co/transaction/initialize", {
+        method: "POST",
+        headers: paymentHeaders(PAYSTACK_SECRET_KEY),
+        body: JSON.stringify({
+          email,
+          amount: Math.round(Number(amount) * 100),
+          currency,
+          callback_url,
+          metadata,
+        }),
+      });
+
+      const { ok, payload } = await normalizeProviderResponse(response);
+
+      if (!ok || !payload?.status || !payload?.data) {
+        return jsonError(
+          c,
+          payload?.message || "Unable to initialize Paystack payment.",
+          response.status || 502,
+        );
+      }
+
+      return c.json({ success: true, data: payload.data });
+    }
+
+    if (!FLUTTERWAVE_SECRET_KEY) {
+      return jsonError(c, "Flutterwave secret key is not configured.", 503);
+    }
+
+    const reference = tx_ref || `propertyhub_${Date.now()}`;
+    const response = await fetch("https://api.flutterwave.com/v3/payments", {
+      method: "POST",
+      headers: paymentHeaders(FLUTTERWAVE_SECRET_KEY),
+      body: JSON.stringify({
+        tx_ref: reference,
+        amount: Number(amount),
+        currency,
+        redirect_url: callback_url,
+        customer: {
+          email,
+        },
+        customizations: {
+          title: "PropertyHub Payment",
+          description: metadata?.description || "PropertyHub checkout",
+        },
+        meta: metadata,
+      }),
+    });
+
+    const { ok, payload } = await normalizeProviderResponse(response);
+
+    if (!ok || payload?.status !== "success" || !payload?.data?.link) {
+      return jsonError(
+        c,
+        payload?.message || "Unable to initialize Flutterwave payment.",
+        response.status || 502,
+      );
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        link: payload.data.link,
+        tx_ref: reference,
+      },
+    });
+  } catch (error) {
+    console.error("Payment initialization error:", error);
+    return jsonError(c, "Failed to initialize payment.", 500);
+  }
+};
+
+const verifyPaymentHandler = async (c: any) => {
+  const paymentId = c.req.param("paymentId");
+
+  if (!paymentId) {
+    return jsonError(c, "Payment reference is required.");
+  }
+
+  try {
+    if (PAYSTACK_SECRET_KEY) {
+      const paystackResponse = await fetch(
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(paymentId)}`,
+        {
+          headers: paymentHeaders(PAYSTACK_SECRET_KEY),
+        },
+      );
+
+      const { ok, payload } = await normalizeProviderResponse(paystackResponse);
+      if (ok && payload?.status && payload?.data) {
+        return c.json({ success: true, data: payload.data });
+      }
+    }
+
+    if (FLUTTERWAVE_SECRET_KEY) {
+      const flutterwaveResponse = await fetch(
+        `https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${encodeURIComponent(paymentId)}`,
+        {
+          headers: paymentHeaders(FLUTTERWAVE_SECRET_KEY),
+        },
+      );
+
+      const { ok, payload } = await normalizeProviderResponse(flutterwaveResponse);
+      if (ok && payload?.status === "success" && payload?.data) {
+        return c.json({ success: true, data: payload.data });
+      }
+    }
+
+    return jsonError(c, "Payment reference could not be verified.", 404);
+  } catch (error) {
+    console.error("Payment verification error:", error);
+    return jsonError(c, "Failed to verify payment.", 500);
+  }
+};
+
+app.post("/make-server-8669f8c6/api/v1/payments/initialize", initializePaymentHandler);
+app.post("/make-server-8669f8c6/api/payments/initialize", initializePaymentHandler);
+app.get("/make-server-8669f8c6/api/v1/payments/:paymentId/verify", verifyPaymentHandler);
+app.get("/make-server-8669f8c6/api/payments/:paymentId/status", verifyPaymentHandler);
 
 // Authentication endpoints
 app.post("/make-server-8669f8c6/auth/signup", async (c) => {
@@ -294,8 +463,66 @@ app.get("/make-server-8669f8c6/users", async (c) => {
   }
 });
 
+app.get("/make-server-8669f8c6/users/:userId/chat-eligible", async (c) => {
+  try {
+    const userId = c.req.param("userId");
+    const users = await kv.getByPrefix("user:");
+    const userList = users
+      .map((user) => JSON.parse(user))
+      .filter((user) => user.id !== userId)
+      .filter((user) => ["admin", "host", "manager"].includes(user.role))
+      .map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar,
+      }));
+
+    return c.json({ success: true, users: userList });
+  } catch (error) {
+    console.error("Error fetching chat eligible users:", error);
+    return c.json({ success: false, error: "Failed to fetch eligible users" }, 500);
+  }
+});
+
+app.put("/make-server-8669f8c6/chat/rooms/:roomId/read/:userId", async (c) => {
+  try {
+    const roomId = c.req.param("roomId");
+    const userId = c.req.param("userId");
+    const roomData = await kv.get(`chat:rooms:${userId}:${roomId}`);
+
+    if (!roomData) {
+      return c.json({ success: false, error: "Room not found" }, 404);
+    }
+
+    const room = JSON.parse(roomData);
+    const nextUnreadCount =
+      typeof room.unreadCount === "object" && room.unreadCount !== null
+        ? { ...room.unreadCount, [userId]: 0 }
+        : 0;
+
+    const updatedRoom = {
+      ...room,
+      unreadCount: nextUnreadCount,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await kv.set(`chat:rooms:${userId}:${roomId}`, JSON.stringify(updatedRoom));
+
+    return c.json({ success: true, room: updatedRoom });
+  } catch (error) {
+    console.error("Error marking room as read:", error);
+    return c.json({ success: false, error: "Failed to mark room as read" }, 500);
+  }
+});
+
 // Push notification endpoints
 app.get("/make-server-8669f8c6/push/vapid-key", (c) => {
+  if (!VAPID_PUBLIC_KEY) {
+    return c.json({ success: false, error: "VAPID public key is not configured" }, 503);
+  }
+
   return c.json({ 
     success: true, 
     publicKey: VAPID_PUBLIC_KEY 
@@ -304,21 +531,45 @@ app.get("/make-server-8669f8c6/push/vapid-key", (c) => {
 
 app.post("/make-server-8669f8c6/push/devices", async (c) => {
   try {
-    const { userId, subscription, name, type, userAgent } = await c.req.json();
-    
-    const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const { userId, subscription, token, platform, name, type, userAgent } = await c.req.json();
+
+    const existingDeviceIds = await kv.getByPrefix(`user_device:${userId}:`);
+    let existingDevice = null;
+
+    for (const candidateId of existingDeviceIds) {
+      const rawDevice = await kv.get(`push_device:${candidateId}`);
+      if (!rawDevice) continue;
+
+      const parsedDevice = JSON.parse(rawDevice);
+      const matchingEndpoint =
+        subscription?.endpoint &&
+        parsedDevice.subscription?.endpoint === subscription.endpoint;
+      const matchingToken = token && parsedDevice.token === token;
+
+      if (matchingEndpoint || matchingToken) {
+        existingDevice = parsedDevice;
+        break;
+      }
+    }
+
+    const deviceId =
+      existingDevice?.id ||
+      `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const device = {
+      ...existingDevice,
       id: deviceId,
       userId,
       name,
       type,
       userAgent,
-      subscription,
+      subscription: subscription || existingDevice?.subscription,
+      token: token || existingDevice?.token,
+      platform: platform || existingDevice?.platform,
       lastSeen: new Date().toISOString(),
       isActive: true,
-      createdAt: new Date().toISOString()
+      createdAt: existingDevice?.createdAt || new Date().toISOString(),
     };
-    
+
     await kv.set(`push_device:${deviceId}`, JSON.stringify(device));
     await kv.set(`user_device:${userId}:${deviceId}`, deviceId);
     
@@ -349,13 +600,71 @@ app.get("/make-server-8669f8c6/push/devices/:userId", async (c) => {
   }
 });
 
+app.delete("/make-server-8669f8c6/push/devices/:deviceId", async (c) => {
+  try {
+    const deviceId = c.req.param("deviceId");
+    const deviceData = await kv.get(`push_device:${deviceId}`);
+
+    if (deviceData) {
+      const device = JSON.parse(deviceData);
+      await kv.del(`push_device:${deviceId}`);
+      await kv.del(`user_device:${device.userId}:${deviceId}`);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting push device:", error);
+    return c.json({ success: false, error: "Failed to delete device" }, 500);
+  }
+});
+
+app.post("/make-server-8669f8c6/push/devices/unsubscribe", async (c) => {
+  try {
+    const { userId, endpoint, token } = await c.req.json();
+    const deviceIds = await kv.getByPrefix(`user_device:${userId}:`);
+
+    for (const deviceId of deviceIds) {
+      const deviceData = await kv.get(`push_device:${deviceId}`);
+      if (!deviceData) continue;
+
+      const device = JSON.parse(deviceData);
+      const matchingEndpoint = endpoint && device.subscription?.endpoint === endpoint;
+      const matchingToken = token && device.token === token;
+
+      if (matchingEndpoint || matchingToken) {
+        await kv.del(`push_device:${deviceId}`);
+        await kv.del(`user_device:${userId}:${deviceId}`);
+      }
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error unsubscribing push device:", error);
+    return c.json({ success: false, error: "Failed to unsubscribe device" }, 500);
+  }
+});
+
 app.post("/make-server-8669f8c6/push/test", async (c) => {
   try {
-    const { userId, title, body, icon } = await c.req.json();
+    const { userId, title, body, icon, data } = await c.req.json();
+    const notificationId = `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const notification = {
+      id: notificationId,
+      userId,
+      title,
+      body,
+      icon: icon || null,
+      data: data || {},
+      type: data?.type || "test",
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    await kv.set(`notification:${userId}:${notificationId}`, JSON.stringify(notification));
+
+    console.log(`Queued push notification for user ${userId}: ${title} - ${body}`);
     
-    console.log(`Would send push notification to user ${userId}: ${title} - ${body}`);
-    
-    return c.json({ success: true, message: "Test notification sent" });
+    return c.json({ success: true, message: "Test notification queued", data: notification });
   } catch (error) {
     console.error("Error sending test notification:", error);
     return c.json({ success: false, error: "Failed to send test notification" }, 500);

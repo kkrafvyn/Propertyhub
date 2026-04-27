@@ -60,10 +60,17 @@ test.describe('Marketplace', () => {
   test('marketplace should be responsive on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1000);
 
-    const buttons = await page.locator('button').count();
-    expect(buttons).toBeGreaterThan(0);
+    const searchHeading = page.getByRole('heading', { name: 'Search homes' });
+    const browseButton = page.getByRole('button', { name: 'Browse properties', exact: true });
+
+    if (!(await searchHeading.isVisible({ timeout: 5000 }).catch(() => false))) {
+      await expect(browseButton).toBeVisible({ timeout: 15000 });
+      await browseButton.click();
+    }
+
+    await expect(searchHeading).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Filters', exact: true })).toBeVisible();
   });
 
   test('marketplace should render content', async ({ page }) => {

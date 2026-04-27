@@ -23,11 +23,14 @@ import { Switch } from './ui/switch';
 import { Textarea } from './ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import ThemeSelector from './ThemeSelector';
+import BiometricSettingsCard, { type BiometricSettingsValue } from './BiometricSettingsCard';
+import { NotificationSettings } from './PushNotificationService';
 import { useAppContext } from '../hooks/useAppContext';
 import { defaultAuthPreferences } from '../utils/authUser';
+import { getRoleWorkspace } from '../utils/roleCapabilities';
 import { authService, userService } from '../services/supabaseApi';
 import { isSupabaseConfigured } from '../services/supabaseClient';
-import type { Language, User } from '../types';
+import type { AppState, Language, User } from '../types';
 
 type SettingsSectionId =
   | 'personal'
@@ -40,6 +43,8 @@ interface ProfileSettingsProps {
   currentUser: User;
   onUpdateUser: (updatedUser: User) => void;
   onClose?: () => void;
+  onNavigate?: (state: AppState) => void;
+  focusSection?: SettingsSectionId;
 }
 
 const formatDate = (value?: string): string => {
@@ -117,7 +122,14 @@ const SETTINGS_SECTIONS: Array<{
   },
 ];
 
-export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileSettingsProps) {
+export function ProfileSettings({
+  currentUser,
+  onUpdateUser,
+  onClose,
+  onNavigate,
+  focusSection,
+}: ProfileSettingsProps) {
+  const roleWorkspace = React.useMemo(() => getRoleWorkspace(currentUser), [currentUser]);
   const {
     favoriteProperties,
     comparedProperties,
@@ -134,6 +146,10 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
       notifications: {
         ...defaultAuthPreferences.notifications,
         ...currentUser.preferences?.notifications,
+        doNotDisturb: {
+          ...defaultAuthPreferences.notifications.doNotDisturb,
+          ...currentUser.preferences?.notifications?.doNotDisturb,
+        },
       },
       privacy: {
         ...defaultAuthPreferences.privacy,
@@ -142,6 +158,14 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
       display: {
         ...defaultAuthPreferences.display,
         ...currentUser.preferences?.display,
+      },
+      security: {
+        ...defaultAuthPreferences.security,
+        ...currentUser.preferences?.security,
+        biometrics: {
+          ...defaultAuthPreferences.security?.biometrics,
+          ...currentUser.preferences?.security?.biometrics,
+        },
       },
     }),
     [currentUser.preferences]
@@ -161,14 +185,36 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
     push: basePreferences.notifications.push,
     email: basePreferences.notifications.email,
     marketing: basePreferences.notifications.marketing,
+    inApp: basePreferences.notifications.inApp ?? true,
+    soundEnabled: basePreferences.notifications.soundEnabled ?? true,
   });
   const [privacyForm, setPrivacyForm] = React.useState({
     showProfile: basePreferences.privacy.showProfile,
     readReceipts: basePreferences.privacy.showActivity,
   });
+  const [biometricForm, setBiometricForm] = React.useState<BiometricSettingsValue>({
+    allowDeviceCredentials:
+      basePreferences.security?.biometrics?.allowDeviceCredentials ?? true,
+    biometryType: basePreferences.security?.biometrics?.biometryType,
+    enabled: basePreferences.security?.biometrics?.enabled ?? false,
+    lastVerifiedAt: basePreferences.security?.biometrics?.lastVerifiedAt,
+    promptOnLaunch: basePreferences.security?.biometrics?.promptOnLaunch ?? false,
+  });
   const [isSaving, setIsSaving] = React.useState(false);
   const [isExporting, setIsExporting] = React.useState(false);
   const [securityAction, setSecurityAction] = React.useState<'reset' | 'verify' | null>(null);
+  const focusedSectionMeta = React.useMemo(
+    () => SETTINGS_SECTIONS.find((section) => section.id === focusSection) || null,
+    [focusSection]
+  );
+  const visibleSections = React.useMemo(
+    () =>
+      focusSection
+        ? SETTINGS_SECTIONS.filter((section) => section.id === focusSection)
+        : SETTINGS_SECTIONS,
+    [focusSection]
+  );
+  const isFocusedView = Boolean(focusSection);
 
   const memberSince = currentUser.joinedAt || currentUser.createdAt;
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
@@ -181,6 +227,9 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
   const updateProfileField = (field: keyof typeof profileForm, value: string) => {
     setProfileForm((previous) => ({ ...previous, [field]: value }));
   };
+
+  const shouldShowSection = (sectionId: SettingsSectionId) =>
+    !focusSection || focusSection === sectionId;
 
   const handleSaveChanges = async () => {
     const trimmedName = profileForm.name.trim();
@@ -199,6 +248,8 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
         push: notificationForm.push,
         email: notificationForm.email,
         marketing: notificationForm.marketing,
+        inApp: notificationForm.inApp,
+        soundEnabled: notificationForm.soundEnabled,
       },
       privacy: {
         ...basePreferences.privacy,
@@ -208,6 +259,13 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
       display: {
         ...basePreferences.display,
         currency: preferenceForm.currency,
+      },
+      security: {
+        ...basePreferences.security,
+        biometrics: {
+          ...basePreferences.security?.biometrics,
+          ...biometricForm,
+        },
       },
     };
 
@@ -264,6 +322,7 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
           reducedMotion,
           notifications: notificationForm,
           privacy: privacyForm,
+          biometrics: biometricForm,
         },
         exportedAt: new Date().toISOString(),
       };
@@ -344,7 +403,47 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
                   </Button>
                 ) : null}
 
-                <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Settings</h1>
+                <div className="space-y-3">
+                  <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+                    {focusedSectionMeta?.title || 'Settings'}
+                  </h1>
+                  <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
+                    {focusedSectionMeta?.description ||
+                      'Manage your account details, delivery preferences, notifications, and privacy controls from one place.'}
+                  </p>
+                </div>
+
+                {onNavigate ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onNavigate('billing')}
+                      className="rounded-full"
+                    >
+                      Billing
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onNavigate('privacy')}
+                      className="rounded-full"
+                    >
+                      Privacy center
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onNavigate('help')}
+                      className="rounded-full"
+                    >
+                      Help center
+                    </Button>
+                  </div>
+                ) : null}
               </div>
 
               <Button
@@ -359,116 +458,121 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
             </div>
           </header>
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
-            <div className="air-panel rounded-[34px] p-6 sm:p-8">
-              <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-                <Avatar className="h-24 w-24 rounded-[28px] border border-border/80">
-                  <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
-                  <AvatarFallback className="text-xl font-semibold">
-                    {getInitials(currentUser.name)}
-                  </AvatarFallback>
-                </Avatar>
+          {!isFocusedView ? (
+            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+              <div className="air-panel rounded-[34px] p-6 sm:p-8">
+                <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+                  <Avatar className="h-24 w-24 rounded-[28px] border border-border/80">
+                    <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
+                    <AvatarFallback className="text-xl font-semibold">
+                      {getInitials(currentUser.name)}
+                    </AvatarFallback>
+                  </Avatar>
 
-                <div className="min-w-0 flex-1 space-y-3">
-                  <div>
-                    <h2 className="truncate text-2xl font-semibold">{currentUser.name}</h2>
-                    <p className="truncate text-sm text-muted-foreground">{currentUser.email}</p>
-                  </div>
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <div>
+                      <h2 className="truncate text-2xl font-semibold">{currentUser.name}</h2>
+                      <p className="truncate text-sm text-muted-foreground">{currentUser.email}</p>
+                    </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <span className="theme-success-badge inline-flex rounded-full px-3 py-1 text-xs font-semibold">
-                      {currentUser.verified ? 'Verified profile' : 'Verification pending'}
-                    </span>
-                    <span className="theme-info-badge inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize">
-                      {currentUser.role} account
-                    </span>
-                    <span className="air-pill rounded-full px-3 py-1 text-xs font-semibold text-muted-foreground">
-                      Member since {formatDate(memberSince)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="air-surface-muted rounded-[24px] px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                    Saved homes
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold">{favoriteProperties.length}</div>
-                </div>
-                <div className="air-surface-muted rounded-[24px] px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                    In compare
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold">{comparedProperties.length}</div>
-                </div>
-                <div className="air-surface-muted rounded-[24px] px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                    Unread alerts
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold">{unreadNotifications}</div>
-                </div>
-                <div className="air-surface-muted rounded-[24px] px-4 py-4">
-                  <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-                    Reviews given
-                  </div>
-                  <div className="mt-2 text-2xl font-semibold">
-                    {currentUser.stats?.reviewsGiven || 0}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="air-panel rounded-[34px] p-6 sm:p-8">
-              <div className="grid gap-3">
-                {SETTINGS_SECTIONS.map((section) => {
-                  const Icon = section.icon;
-
-                  return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => scrollToSection(section.id)}
-                      className="air-surface flex items-center gap-4 rounded-[24px] px-4 py-4 text-left transition-colors hover:bg-secondary/80"
-                    >
-                      <span className="theme-accent-icon flex h-11 w-11 items-center justify-center rounded-[16px]">
-                        <Icon className="h-5 w-5" />
+                    <div className="flex flex-wrap gap-2">
+                      <span className="theme-success-badge inline-flex rounded-full px-3 py-1 text-xs font-semibold">
+                        {currentUser.verified ? 'Verified profile' : 'Verification pending'}
                       </span>
-                      <span className="min-w-0 flex-1 text-sm font-semibold">{section.title}</span>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
+                      <span className="theme-info-badge inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize">
+                        {roleWorkspace.label} account
+                      </span>
+                      <span className="air-pill rounded-full px-3 py-1 text-xs font-semibold text-muted-foreground">
+                        Member since {formatDate(memberSince)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-          <div className="grid gap-6 lg:grid-cols-[250px_minmax(0,1fr)] xl:gap-8">
-            <aside className="hidden lg:block">
-              <div className="air-panel sticky top-28 rounded-[28px] p-3">
-                {SETTINGS_SECTIONS.map((section) => {
-                  const Icon = section.icon;
-
-                  return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => scrollToSection(section.id)}
-                      className="flex w-full items-center gap-3 rounded-[20px] px-3 py-3 text-left text-sm font-medium transition-colors hover:bg-secondary/80"
-                    >
-                      <Icon className="h-4 w-4 text-muted-foreground" />
-                      <span>{section.title}</span>
-                    </button>
-                  );
-                })}
+                <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="air-surface-muted rounded-[24px] px-4 py-4">
+                    <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                      Saved homes
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold">{favoriteProperties.length}</div>
+                  </div>
+                  <div className="air-surface-muted rounded-[24px] px-4 py-4">
+                    <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                      In compare
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold">{comparedProperties.length}</div>
+                  </div>
+                  <div className="air-surface-muted rounded-[24px] px-4 py-4">
+                    <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                      Unread alerts
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold">{unreadNotifications}</div>
+                  </div>
+                  <div className="air-surface-muted rounded-[24px] px-4 py-4">
+                    <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                      Reviews given
+                    </div>
+                    <div className="mt-2 text-2xl font-semibold">
+                      {currentUser.stats?.reviewsGiven || 0}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </aside>
+
+              <div className="air-panel rounded-[34px] p-6 sm:p-8">
+                <div className="grid gap-3">
+                  {visibleSections.map((section) => {
+                    const Icon = section.icon;
+
+                    return (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => scrollToSection(section.id)}
+                        className="air-surface flex items-center gap-4 rounded-[24px] px-4 py-4 text-left transition-colors hover:bg-secondary/80"
+                      >
+                        <span className="theme-accent-icon flex h-11 w-11 items-center justify-center rounded-[16px]">
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        <span className="min-w-0 flex-1 text-sm font-semibold">{section.title}</span>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <div className={`grid gap-6 xl:gap-8 ${isFocusedView ? '' : 'lg:grid-cols-[250px_minmax(0,1fr)]'}`}>
+            {!isFocusedView ? (
+              <aside className="hidden lg:block">
+                <div className="air-panel sticky top-28 rounded-[28px] p-3">
+                  {visibleSections.map((section) => {
+                    const Icon = section.icon;
+
+                    return (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => scrollToSection(section.id)}
+                        className="flex w-full items-center gap-3 rounded-[20px] px-3 py-3 text-left text-sm font-medium transition-colors hover:bg-secondary/80"
+                      >
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                        <span>{section.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </aside>
+            ) : null}
 
             <div className="space-y-6">
-              <section
-                id="personal"
-                className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
-              >
+              {shouldShowSection('personal') ? (
+                <section
+                  id="personal"
+                  className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
+                >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
@@ -534,7 +638,7 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
                     id="profile-bio"
                     value={profileForm.bio}
                     onChange={(event) => updateProfileField('bio', event.target.value)}
-                    placeholder="Add a short intro that helps hosts, renters, or property managers know you better."
+                    placeholder="Add a short intro that helps landlords, buyers, or support know you better."
                     className="theme-input-surface mt-2 min-h-[132px] rounded-[24px] border-border"
                     maxLength={320}
                   />
@@ -542,12 +646,14 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
                     {profileForm.bio.length}/320 characters
                   </div>
                 </div>
-              </section>
+                </section>
+              ) : null}
 
-              <section
-                id="preferences"
-                className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
-              >
+              {shouldShowSection('preferences') ? (
+                <section
+                  id="preferences"
+                  className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
+                >
                 <div className="flex items-center gap-3">
                   <span className="theme-accent-icon flex h-11 w-11 items-center justify-center rounded-[16px]">
                     <SlidersHorizontal className="h-5 w-5" />
@@ -611,12 +717,14 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
                   <h3 className="text-base font-semibold">Theme</h3>
                   <ThemeSelector />
                 </div>
-              </section>
+                </section>
+              ) : null}
 
-              <section
-                id="notifications"
-                className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
-              >
+              {shouldShowSection('notifications') ? (
+                <section
+                  id="notifications"
+                  className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
+                >
                 <div className="flex items-center gap-3">
                   <span className="theme-accent-icon flex h-11 w-11 items-center justify-center rounded-[16px]">
                     <Bell className="h-5 w-5" />
@@ -632,9 +740,19 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
                       description: 'Messages, booking activity, and important account updates.',
                     },
                     {
+                      key: 'inApp' as const,
+                      title: 'In-app notifications',
+                      description: 'Show a live inbox inside PropertyHub while you are using the app.',
+                    },
+                    {
                       key: 'email' as const,
                       title: 'Email notifications',
                       description: 'Receipts, account notices, and platform summaries.',
+                    },
+                    {
+                      key: 'soundEnabled' as const,
+                      title: 'Notification sounds',
+                      description: 'Play a short sound when important alerts arrive on this device.',
                     },
                     {
                       key: 'marketing' as const,
@@ -646,7 +764,10 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
                       key={item.key}
                       className="air-surface flex items-start justify-between gap-4 rounded-[24px] px-5 py-4"
                     >
-                      <div className="text-sm font-semibold">{item.title}</div>
+                      <div>
+                        <div className="text-sm font-semibold">{item.title}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">{item.description}</div>
+                      </div>
                       <Switch
                         checked={notificationForm[item.key]}
                         onCheckedChange={(checked) =>
@@ -656,12 +777,18 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
                     </div>
                   ))}
                 </div>
-              </section>
 
-              <section
-                id="security"
-                className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
-              >
+                <div className="mt-6">
+                  <NotificationSettings />
+                </div>
+                </section>
+              ) : null}
+
+              {shouldShowSection('security') ? (
+                <section
+                  id="security"
+                  className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
+                >
                 <div className="flex items-center gap-3">
                   <span className="theme-accent-icon flex h-11 w-11 items-center justify-center rounded-[16px]">
                     <ShieldCheck className="h-5 w-5" />
@@ -728,12 +855,19 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
                     <div className="mt-2 text-base font-semibold">Active</div>
                   </div>
                 </div>
-              </section>
 
-              <section
-                id="privacy"
-                className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
-              >
+                <BiometricSettingsCard
+                  value={biometricForm}
+                  onChange={setBiometricForm}
+                />
+                </section>
+              ) : null}
+
+              {shouldShowSection('privacy') ? (
+                <section
+                  id="privacy"
+                  className="air-panel scroll-mt-28 rounded-[32px] p-6 sm:p-8"
+                >
                 <div className="flex items-center gap-3">
                   <span className="theme-accent-icon flex h-11 w-11 items-center justify-center rounded-[16px]">
                     <LockKeyhole className="h-5 w-5" />
@@ -799,10 +933,23 @@ export function ProfileSettings({ currentUser, onUpdateUser, onClose }: ProfileS
 
                   <div className="air-surface-muted rounded-[24px] p-5">
                     <div className="text-sm font-semibold">Account closure</div>
-                    <div className="mt-2 text-sm text-muted-foreground">Contact support</div>
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      Use the help center before closing your account so we can verify any outstanding payments, bookings, or disputes.
+                    </div>
+                    {onNavigate ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => onNavigate('help')}
+                        className="mt-4 rounded-full"
+                      >
+                        Open help center
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
-              </section>
+                </section>
+              ) : null}
 
               <div className="flex justify-end">
                 <Button

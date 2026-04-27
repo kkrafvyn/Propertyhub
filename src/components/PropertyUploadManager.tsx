@@ -145,6 +145,18 @@ const CURRENCIES = [
   { code: 'GBP', symbol: '£', name: 'British Pound' }
 ];
 
+const formatCurrency = (amount: number, currencyCode: string) => {
+  try {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currencyCode,
+      maximumFractionDigits: amount >= 1000 ? 0 : 2,
+    }).format(amount || 0);
+  } catch {
+    return `${currencyCode} ${Number(amount || 0).toLocaleString('en-US')}`;
+  }
+};
+
 export const PropertyUploadManager: React.FC<PropertyUploadManagerProps> = ({
   currentUser,
   onPropertySaved,
@@ -207,6 +219,9 @@ export const PropertyUploadManager: React.FC<PropertyUploadManagerProps> = ({
   }));
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const previewImage = formData.images[0] || '';
+  const previewPrice = formData.price || formData.pricing.basePrice || 0;
+  const previewAmenities = formData.amenities.slice(0, 6);
 
   // Form validation
   const validateForm = useCallback(() => {
@@ -790,11 +805,112 @@ export const PropertyUploadManager: React.FC<PropertyUploadManagerProps> = ({
             <DialogTitle>Property Preview</DialogTitle>
           </DialogHeader>
           <div className="space-y-6">
-            {/* Preview content would go here - similar to PropertyDetailsView */}
-            <div className="text-center py-8">
-              <Eye className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-medium mb-2">Property Preview</h3>
-              <p className="text-muted-foreground">Preview functionality coming soon</p>
+            <div className="overflow-hidden rounded-[28px] border border-border bg-card shadow-sm">
+              <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+                <div className="bg-secondary">
+                  {previewImage ? (
+                    <ImageWithFallback
+                      src={previewImage}
+                      alt={formData.title || 'Property preview'}
+                      className="h-full min-h-[280px] w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex min-h-[280px] items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(255,56,92,0.12),transparent_30%),linear-gradient(180deg,rgba(17,24,39,0.12),rgba(17,24,39,0.03))]">
+                      <div className="text-center text-muted-foreground">
+                        <Home className="mx-auto mb-3 h-12 w-12" />
+                        <p className="text-sm font-medium">
+                          Add a cover image to see the hero preview
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-5 p-6">
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={formData.status === 'active' ? 'default' : 'secondary'}>
+                      {formData.status}
+                    </Badge>
+                    {formData.featured ? <Badge variant="outline">Featured</Badge> : null}
+                    {formData.verified ? <Badge variant="outline">Verified</Badge> : null}
+                  </div>
+
+                  <div>
+                    <h3 className="text-2xl font-semibold text-foreground">
+                      {formData.title || 'Untitled property'}
+                    </h3>
+                    <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="h-4 w-4" />
+                      {formData.location || 'Location pending'}
+                    </p>
+                    <p className="mt-3 text-3xl font-semibold text-foreground">
+                      {formatCurrency(previewPrice, formData.currency)}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl bg-secondary/80 p-3">
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Beds
+                      </div>
+                      <div className="mt-2 text-lg font-semibold">{formData.bedrooms}</div>
+                    </div>
+                    <div className="rounded-2xl bg-secondary/80 p-3">
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Baths
+                      </div>
+                      <div className="mt-2 text-lg font-semibold">{formData.bathrooms}</div>
+                    </div>
+                    <div className="rounded-2xl bg-secondary/80 p-3">
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Area
+                      </div>
+                      <div className="mt-2 text-lg font-semibold">{formData.area || 0} m2</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Description</p>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {formData.description ||
+                        'Add a description to preview how the listing story reads to guests or buyers.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Highlights</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {previewAmenities.length > 0 ? (
+                        previewAmenities.map((amenity) => (
+                          <Badge key={amenity} variant="secondary">
+                            {amenity}
+                          </Badge>
+                        ))
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Add amenities to preview the listing highlights.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-background/60 p-4 text-sm text-muted-foreground">
+                    Preferred contact:{' '}
+                    <span className="font-medium text-foreground">
+                      {formData.ownerContact.preferredContact}
+                    </span>
+                    {formData.ownerContact.email ? (
+                      <span className="block pt-1">{formData.ownerContact.email}</span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button type="button" onClick={() => setPreviewMode(false)}>
+                Back to editor
+              </Button>
             </div>
           </div>
         </DialogContent>

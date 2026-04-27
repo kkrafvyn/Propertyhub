@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Home, Plus, Edit, Trash2, Eye, DollarSign, TrendingUp } from 'lucide-react';
+import { Home, Plus, Edit, Trash2, Eye, DollarSign, Shield, TrendingUp } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -17,15 +18,19 @@ import {
 } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
-import type { Property, User as UserType } from '../types';
+import type { AppState, Property, User as UserType } from '../types';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import RoleFunctionsPanel from './RoleFunctionsPanel';
+import { getRoleWorkspace, userCan } from '../utils/roleCapabilities';
+import { useGeocoding } from './geocoding/GeocodingProvider';
 
 interface PropertyManagementProps {
   user: UserType;
   properties: Property[];
-  onAddProperty?: (property: Property) => void;
-  onUpdateProperty?: (propertyId: string, updates: Partial<Property>) => void;
-  onDeleteProperty?: (propertyId: string) => void;
+  onNavigation?: (state: AppState) => void;
+  onAddProperty?: (property: Property) => Promise<void> | void;
+  onUpdateProperty?: (propertyId: string, updates: Partial<Property>) => Promise<void> | void;
+  onDeleteProperty?: (propertyId: string) => Promise<void> | void;
 }
 
 interface PropertyDraft {
@@ -70,25 +75,40 @@ const getPropertyImage = (property: Property) =>
 export function PropertyManagement({
   user,
   properties,
+  onNavigation,
   onAddProperty,
   onUpdateProperty,
   onDeleteProperty,
 }: PropertyManagementProps) {
   const [isAddingProperty, setIsAddingProperty] = useState(false);
+  const [isSavingProperty, setIsSavingProperty] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [newProperty, setNewProperty] = useState<PropertyDraft>(initialDraft);
+  const { geocodeAddress } = useGeocoding();
+  const roleWorkspace = useMemo(() => getRoleWorkspace(user), [user]);
+  const normalizedRole = roleWorkspace.role;
+  const canManageProperties = userCan(user, 'canManageProperties');
+  const canAddProperty = userCan(user, 'canAddProperty');
+  const canEditProperty = userCan(user, 'canEditProperty');
+  const canDeleteProperty = userCan(user, 'canDeleteProperty');
+  const canViewAnalytics = userCan(user, 'canViewAnalytics');
+  const managedPropertyIds = useMemo(
+    () => new Set(user.managerData?.assignedProperties || []),
+    [user.managerData?.assignedProperties],
+  );
 
   const userProperties = useMemo(
     () =>
       properties.filter((property) => {
-        if (user.role === 'admin') return true;
-        if (user.role === 'manager') {
-          return user.managerData?.assignedProperties?.includes(property.id) ?? false;
+        if (!canManageProperties) return false;
+        if (normalizedRole === 'admin') return true;
+        if (normalizedRole === 'host') return property.ownerId === user.id;
+        if (normalizedRole === 'manager') {
+          return property.managerId === user.id || managedPropertyIds.has(property.id);
         }
-        if (user.role === 'host') return property.ownerId === user.id;
         return false;
       }),
-    [properties, user],
+    [canManageProperties, managedPropertyIds, normalizedRole, properties, user],
   );
 
   const stats = useMemo(
@@ -105,17 +125,31 @@ export function PropertyManagement({
     [userProperties],
   );
 
-  const handleAddProperty = () => {
+  const runManagedAction = async (action: () => Promise<void> | void, failureMessage: string) => {
+    try {
+      await action();
+    } catch (error) {
+      console.error(failureMessage, error);
+      toast.error(failureMessage);
+    }
+  };
+
+  const handleAddProperty = async () => {
     if (!onAddProperty) return;
+
+    setIsSavingProperty(true);
 
     const price = parseInt(newProperty.price, 10) || 0;
     const area = parseInt(newProperty.area, 10) || 0;
     const bedrooms = newProperty.bedrooms ? parseInt(newProperty.bedrooms, 10) : undefined;
     const bathrooms = newProperty.bathrooms ? parseInt(newProperty.bathrooms, 10) : undefined;
     const timestamp = new Date().toISOString();
+    const geocodedLocation = newProperty.location.trim()
+      ? await geocodeAddress(newProperty.location)
+      : null;
 
     const property: Property = {
-      id: Date.now().toString(),
+      id: `draft-${Date.now()}`,
       title: newProperty.title,
       description: newProperty.description,
       type: newProperty.type,
@@ -123,10 +157,10 @@ export function PropertyManagement({
       status: 'available',
       pricing: {
         amount: price,
-        currency: 'USD',
+        currency: 'GHS',
         negotiable: true,
       },
-      location: newProperty.location,
+      location: geocodedLocation?.formattedAddress || newProperty.location,
       features: {
         area,
         bedrooms,
@@ -147,7 +181,7 @@ export function PropertyManagement({
       inquiries: 0,
       tags: [],
       price,
-      currency: 'USD',
+      currency: 'GHS',
       images: newProperty.images,
       owner: user.name,
       available: true,
@@ -157,36 +191,72 @@ export function PropertyManagement({
       area,
       bedrooms,
       bathrooms,
-      coordinates: [40.7128, -74.006],
+      coordinates: geocodedLocation
+        ? [geocodedLocation.coordinates.lat, geocodedLocation.coordinates.lng]
+        : undefined,
     };
 
-    onAddProperty(property);
-    setIsAddingProperty(false);
-    setNewProperty(initialDraft());
+    try {
+      await onAddProperty(property);
+      setIsAddingProperty(false);
+      setNewProperty(initialDraft());
+      toast.success('Property saved successfully.');
+    } catch (error) {
+      console.error('Failed to add property:', error);
+      toast.error('Failed to save property.');
+    } finally {
+      setIsSavingProperty(false);
+    }
   };
 
-  const titleByRole: Record<string, string> = {
-    admin: 'Property Management',
-    manager: 'Assigned Properties',
-    host: 'My Properties',
-  };
-
-  const descriptionByRole: Record<string, string> = {
-    admin: 'Manage all platform properties and assignments.',
-    manager: 'Review and update the properties assigned to you.',
-    host: 'Manage your active listings and portfolio.',
-  };
+  if (!canManageProperties) {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+        <Card className="rounded-[32px] border border-border bg-card shadow-[0_18px_40px_rgba(15,23,42,0.05)]">
+          <CardContent className="flex flex-col items-center px-6 py-12 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-secondary text-muted-foreground">
+              <Shield className="h-8 w-8" />
+            </div>
+            <h2 className="mt-6 text-2xl font-semibold text-foreground">Inventory access is limited</h2>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+              This role can browse the marketplace, activity, and messages, but property management is reserved for landlords, assigned managers, and admins.
+            </p>
+            {onNavigation ? (
+              <Button className="mt-6" onClick={() => onNavigation(roleWorkspace.homeState)}>
+                Return to workspace
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-8 px-4 py-6 sm:px-6 lg:px-8">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-3xl font-semibold">
-          {titleByRole[user.role] || 'Properties'}
+          {roleWorkspace.role === 'admin'
+            ? 'Property Management'
+            : roleWorkspace.role === 'manager'
+              ? 'Managed Properties'
+              : 'My Properties'}
         </h1>
         <p className="text-muted-foreground mt-2">
-          {descriptionByRole[user.role] || 'View and manage your properties.'}
+          {roleWorkspace.role === 'admin'
+            ? 'Review, verify, edit, or remove listings across the platform.'
+            : roleWorkspace.role === 'manager'
+              ? 'Work assigned listings, update readiness, and keep owner operations on track.'
+              : 'Manage your active listings, availability, and portfolio.'}
         </p>
       </motion.div>
+
+      <RoleFunctionsPanel
+        currentUser={user}
+        onNavigate={onNavigation}
+        compact
+        maxItems={3}
+      />
 
       <motion.div
         className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
@@ -241,12 +311,16 @@ export function PropertyManagement({
 
       <Tabs defaultValue="properties" className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <TabsList className="grid h-auto w-full max-w-md grid-cols-2 rounded-[24px] border border-border bg-card p-1 shadow-sm">
+          <TabsList
+            className={`grid h-auto w-full max-w-md rounded-[24px] border border-border bg-card p-1 shadow-sm ${
+              canViewAnalytics ? 'grid-cols-2' : 'grid-cols-1'
+            }`}
+          >
             <TabsTrigger value="properties">Properties</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            {canViewAnalytics ? <TabsTrigger value="analytics">Analytics</TabsTrigger> : null}
           </TabsList>
 
-          {(user.role === 'host' || user.role === 'admin') && onAddProperty && (
+          {canAddProperty && onAddProperty && (
             <Dialog open={isAddingProperty} onOpenChange={setIsAddingProperty}>
               <DialogTrigger asChild>
                 <Button className="w-full sm:w-auto">
@@ -376,7 +450,9 @@ export function PropertyManagement({
                   <Button variant="outline" onClick={() => setIsAddingProperty(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={handleAddProperty}>Add Property</Button>
+                  <Button onClick={() => void handleAddProperty()} disabled={isSavingProperty}>
+                    {isSavingProperty ? 'Saving...' : 'Add Property'}
+                  </Button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -430,7 +506,7 @@ export function PropertyManagement({
                           </div>
 
                           <div className="flex space-x-2">
-                            {onUpdateProperty && (
+                            {onUpdateProperty && canEditProperty && (
                               <Dialog>
                                 <DialogTrigger asChild>
                                   <Button
@@ -453,10 +529,15 @@ export function PropertyManagement({
                                         defaultValue={isPropertyAvailable(property) ? 'available' : 'unavailable'}
                                         onValueChange={(value) => {
                                           if (!editingProperty) return;
-                                          onUpdateProperty(editingProperty.id, {
-                                            available: value === 'available',
-                                            status: value === 'available' ? 'available' : 'maintenance',
-                                          });
+                                          void runManagedAction(
+                                            () =>
+                                              onUpdateProperty?.(editingProperty.id, {
+                                                available: value === 'available',
+                                                status:
+                                                  value === 'available' ? 'available' : 'maintenance',
+                                              }),
+                                            'Failed to update property.',
+                                          );
                                           setEditingProperty(null);
                                         }}
                                       >
@@ -474,13 +555,16 @@ export function PropertyManagement({
                               </Dialog>
                             )}
 
-                            {onDeleteProperty && user.role === 'admin' && (
+                            {onDeleteProperty && canDeleteProperty && (
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
                                   if (window.confirm('Are you sure you want to delete this property?')) {
-                                    onDeleteProperty(property.id);
+                                    void runManagedAction(
+                                      () => onDeleteProperty?.(property.id),
+                                      'Failed to delete property.',
+                                    );
                                   }
                                 }}
                               >
@@ -500,11 +584,15 @@ export function PropertyManagement({
                   <Home className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="font-medium mb-2">No Properties Found</h3>
                   <p className="text-muted-foreground mb-4">
-                    {user.role === 'host'
+                    {normalizedRole === 'host'
                       ? "You haven't added any properties yet."
-                      : 'No properties are currently assigned to you.'}
+                      : normalizedRole === 'manager'
+                        ? 'No listings have been assigned to your management lane yet.'
+                      : normalizedRole === 'admin'
+                        ? 'No platform listings are available yet.'
+                        : 'No properties are available for this role yet.'}
                   </p>
-                  {(user.role === 'host' || user.role === 'admin') && onAddProperty && (
+                  {canAddProperty && onAddProperty && (
                     <Button onClick={() => setIsAddingProperty(true)}>
                       <Plus className="w-4 h-4 mr-2" />
                       Add Your First Property
@@ -525,7 +613,11 @@ export function PropertyManagement({
             <CardContent>
               <div className="text-center py-8 text-muted-foreground">
                 <TrendingUp className="w-12 h-12 mx-auto mb-4" />
-                <p>Analytics are available from the management dashboard once live data is connected.</p>
+                <p>
+                  {canViewAnalytics
+                    ? 'Analytics are available from the management dashboard once live data is connected.'
+                    : 'Analytics access has not been enabled for this role yet.'}
+                </p>
               </div>
             </CardContent>
           </Card>

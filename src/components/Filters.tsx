@@ -1,5 +1,6 @@
 import React from 'react';
 import { PropertyFilters } from '../types';
+import supabase from '../services/supabaseClient';
 import { SmartFilters } from './SmartFilters';
 
 interface FiltersProps {
@@ -8,11 +9,48 @@ interface FiltersProps {
 }
 
 export function Filters({ filters, setFilters }: FiltersProps) {
-  // Location search from database/API - implement with actual location service
   const handleLocationSearch = async (query: string) => {
-    // TODO: Implement real location search from Supabase
-    // Example: return await supabase.from('locations').select('*').ilike('name', `%${query}%`);
-    return [];
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.length < 3) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('properties')
+      .select('location, latitude, longitude')
+      .ilike('location', `%${trimmedQuery}%`)
+      .limit(8);
+
+    if (error) {
+      console.error('Location search failed:', error);
+      return [];
+    }
+
+    const uniqueLocations = new Map<
+      string,
+      { name: string; coordinates: [number, number] }
+    >();
+
+    for (const row of data || []) {
+      const name =
+        typeof row.location === 'string'
+          ? row.location.trim()
+          : '';
+
+      if (!name || uniqueLocations.has(name)) {
+        continue;
+      }
+
+      uniqueLocations.set(name, {
+        name,
+        coordinates: [
+          Number(row.latitude || 0),
+          Number(row.longitude || 0),
+        ],
+      });
+    }
+
+    return Array.from(uniqueLocations.values());
   };
 
   // Calculate property count for display

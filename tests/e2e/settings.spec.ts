@@ -8,11 +8,12 @@ test.describe('Settings', () => {
 
     await expect(page.getByRole('heading', { name: 'Search homes' })).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: /Settings/i }).first().click();
+    await page.getByTitle('Account menu').click();
+    await page.getByRole('menuitem', { name: /^Settings$/ }).click();
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
 
     await page.getByRole('button', { name: /Preferences/i }).first().click();
-    await page.getByRole('button', { name: /Dark/i }).first().click();
+    await page.getByRole('button', { name: /^Dark/ }).click();
     await page.getByRole('button', { name: 'Save', exact: true }).first().click();
 
     await expect

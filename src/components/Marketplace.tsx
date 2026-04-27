@@ -16,6 +16,8 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from './ui/drawer';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet';
 import { useAppContext } from '../hooks/useAppContext';
 import {
+  BellRing,
+  BookmarkPlus,
   Clock,
   Filter,
   Grid3X3,
@@ -28,7 +30,9 @@ import {
   SlidersHorizontal,
   Star,
   TrendingUp,
+  Trash2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface MarketplaceProps {
   properties: Property[];
@@ -104,6 +108,11 @@ export function Marketplace({
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'map'>('grid');
   const [selectedMapProperty, setSelectedMapProperty] = useState<Property | null>(null);
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [showSaveSearchComposer, setShowSaveSearchComposer] = useState(false);
+  const [showAlertComposer, setShowAlertComposer] = useState(false);
+  const [saveSearchName, setSaveSearchName] = useState('');
+  const [alertName, setAlertName] = useState('');
+  const [alertFrequency, setAlertFrequency] = useState<'instant' | 'daily' | 'weekly'>('daily');
   const isMobile = useMobile();
   const compareSectionRef = useRef<HTMLElement | null>(null);
   const safeFilters = useMemo(() => normalizeFilters(filters), [filters]);
@@ -121,9 +130,17 @@ export function Marketplace({
     searchResults,
     searchQuery,
     searchHistory,
+    savedSearches,
+    propertyAlerts,
     recommendations,
     performSearch,
     addToHistory,
+    clearSearchHistory,
+    saveSearch,
+    deleteSavedSearch,
+    createAlert,
+    toggleAlert,
+    deleteAlert,
     trackSearchBehavior,
     loadRecommendations,
   } = useSearch();
@@ -135,6 +152,12 @@ export function Marketplace({
       loadRecommendations(currentUser.id);
     }
   }, [currentUser, loadRecommendations]);
+
+  useEffect(() => {
+    if (!searchTerm.trim() && searchQuery) {
+      void performSearch('', safeFilters, currentUser?.id, properties);
+    }
+  }, [currentUser?.id, performSearch, properties, safeFilters, searchQuery, searchTerm]);
 
   const displayProperties = searchQuery ? searchResults : properties;
 
@@ -233,6 +256,7 @@ export function Marketplace({
 
   const handleQuickSearch = (query: string) => {
     setSearchTerm(query);
+    addToHistory(query);
     void performSearch(query, safeFilters, currentUser?.id, properties);
   };
 
@@ -317,9 +341,98 @@ export function Marketplace({
     );
   }, [safeFilters]);
 
+  const activeSearchTerm = (searchTerm.trim() || searchQuery.trim()).trim();
+  const hasSearchConfiguration = Boolean(activeSearchTerm || activeFilterCount > 0);
+
+  const handleApplySavedSearch = async (savedSearch: (typeof savedSearches)[number]) => {
+    const nextFilters = normalizeFilters(savedSearch.filters);
+    setSearchTerm(savedSearch.searchTerm || '');
+    setFilters(nextFilters);
+    setSortBy('featured');
+    await performSearch(savedSearch.searchTerm || '', nextFilters, currentUser?.id, properties);
+    toast.success(`Loaded "${savedSearch.name}"`);
+  };
+
+  const handleSaveCurrentSearch = async () => {
+    if (!hasSearchConfiguration) {
+      toast.error('Set a search or filter first.');
+      return;
+    }
+
+    const derivedName =
+      saveSearchName.trim() ||
+      (activeSearchTerm ? `Search: ${activeSearchTerm}` : `Filtered homes ${new Date().toLocaleDateString()}`);
+
+    try {
+      await saveSearch(derivedName, safeFilters, activeSearchTerm, filteredProperties.length);
+      setSaveSearchName('');
+      setShowSaveSearchComposer(false);
+      toast.success(
+        currentUser ? 'Search saved to your account.' : 'Search saved on this device. Sign in to sync it everywhere.'
+      );
+    } catch (error) {
+      console.error('Failed to save current search:', error);
+      toast.error('Unable to save this search right now.');
+    }
+  };
+
+  const handleCreateCurrentAlert = async () => {
+    if (!hasSearchConfiguration) {
+      toast.error('Build a search before creating an alert.');
+      return;
+    }
+
+    const derivedName =
+      alertName.trim() ||
+      (activeSearchTerm ? `Alert: ${activeSearchTerm}` : `Alert ${new Date().toLocaleDateString()}`);
+
+    try {
+      await createAlert(
+        derivedName,
+        {
+          searchTerm: activeSearchTerm || undefined,
+          location: safeFilters.location,
+          propertyType: safeFilters.type,
+          priceRange: safeFilters.priceRange,
+          bedrooms: safeFilters.bedrooms,
+          bathrooms: safeFilters.bathrooms,
+          amenities: safeFilters.amenities,
+          availability: safeFilters.availability,
+        },
+        {
+          frequency: alertFrequency,
+          pushNotifications: true,
+          matchCount: filteredProperties.length,
+        }
+      );
+      setAlertName('');
+      setAlertFrequency('daily');
+      setShowAlertComposer(false);
+      toast.success(
+        currentUser ? 'Alert created and synced.' : 'Alert saved on this device. Sign in to sync future alerts.'
+      );
+    } catch (error) {
+      console.error('Failed to create current alert:', error);
+      toast.error('Unable to create this alert right now.');
+    }
+  };
+
+  const handleClearSearchHistory = async () => {
+    try {
+      await clearSearchHistory();
+      toast.success('Recent searches cleared.');
+    } catch (error) {
+      console.error('Failed to clear search history:', error);
+      toast.error('Unable to clear your search history.');
+    }
+  };
+
   const handleResetFilters = () => {
+    const resetFilters = { ...DEFAULT_FILTERS };
     setSearchTerm('');
-    setFilters({ ...DEFAULT_FILTERS });
+    setSortBy('featured');
+    setFilters(resetFilters);
+    void performSearch('', resetFilters, currentUser?.id, properties);
   };
 
   const filterPanel = (
@@ -375,14 +488,14 @@ export function Marketplace({
     ));
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 pb-28 pt-4 sm:space-y-8 sm:px-6 lg:px-8">
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-4 sm:space-y-8 sm:px-6 lg:px-8 lg:pb-12">
       <section className="air-panel relative overflow-hidden rounded-[32px] px-5 py-5 sm:px-7 sm:py-7 lg:px-8 lg:py-8">
         <div className="theme-page-glow absolute inset-0" />
         <div
           className={`relative grid gap-8 ${hasSpotlightRail ? 'xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)] xl:items-center' : ''}`}
         >
           <div className="space-y-6">
-            <h1 className="max-w-3xl text-3xl font-semibold tracking-tight text-foreground sm:text-4xl lg:text-[3.25rem]">
+            <h1 className="max-w-3xl text-[2.35rem] font-semibold tracking-tight text-foreground sm:text-4xl lg:text-[3.25rem]">
               Search homes
             </h1>
 
@@ -434,6 +547,241 @@ export function Marketplace({
                     {chip}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {(currentUser || searchHistory.length > 0 || savedSearches.length > 0 || propertyAlerts.length > 0 || showSaveSearchComposer || showAlertComposer) && (
+              <div className="air-surface rounded-[28px] p-4">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Search tools</p>
+                      <p className="text-sm text-muted-foreground">
+                        Save the search you are building, turn it into an alert, and jump back in later.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-full"
+                        onClick={() => {
+                          setShowSaveSearchComposer((current) => !current);
+                          if (showAlertComposer) setShowAlertComposer(false);
+                        }}
+                      >
+                        <BookmarkPlus className="mr-2 h-4 w-4" />
+                        Save search
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-full"
+                        onClick={() => {
+                          setShowAlertComposer((current) => !current);
+                          if (showSaveSearchComposer) setShowSaveSearchComposer(false);
+                        }}
+                      >
+                        <BellRing className="mr-2 h-4 w-4" />
+                        Create alert
+                      </Button>
+                      {searchHistory.length > 0 && (
+                        <Button type="button" variant="ghost" className="rounded-full" onClick={handleClearSearchHistory}>
+                          Clear history
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {showSaveSearchComposer && (
+                    <div className="grid gap-3 rounded-[24px] border border-border bg-card/80 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                      <div className="space-y-2">
+                        <label htmlFor="saved-search-name" className="text-sm font-medium text-foreground">
+                          Search name
+                        </label>
+                        <input
+                          id="saved-search-name"
+                          type="text"
+                          value={saveSearchName}
+                          onChange={(event) => setSaveSearchName(event.target.value)}
+                          placeholder={activeSearchTerm ? `Search: ${activeSearchTerm}` : 'Filtered homes'}
+                          className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none transition focus:border-primary"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {filteredProperties.length} homes currently match this setup.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="ghost" className="rounded-full" onClick={() => setShowSaveSearchComposer(false)}>
+                          Cancel
+                        </Button>
+                        <Button type="button" className="rounded-full" onClick={handleSaveCurrentSearch}>
+                          Save now
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {showAlertComposer && (
+                    <div className="grid gap-3 rounded-[24px] border border-border bg-card/80 p-4 lg:grid-cols-[minmax(0,1fr)_190px_auto] lg:items-end">
+                      <div className="space-y-2">
+                        <label htmlFor="search-alert-name" className="text-sm font-medium text-foreground">
+                          Alert name
+                        </label>
+                        <input
+                          id="search-alert-name"
+                          type="text"
+                          value={alertName}
+                          onChange={(event) => setAlertName(event.target.value)}
+                          placeholder={activeSearchTerm ? `Alert: ${activeSearchTerm}` : 'My property alert'}
+                          className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none transition focus:border-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label htmlFor="search-alert-frequency" className="text-sm font-medium text-foreground">
+                          Frequency
+                        </label>
+                        <select
+                          id="search-alert-frequency"
+                          value={alertFrequency}
+                          onChange={(event) => setAlertFrequency(event.target.value as 'instant' | 'daily' | 'weekly')}
+                          className="h-11 w-full rounded-2xl border border-border bg-background px-4 text-sm outline-none transition focus:border-primary"
+                        >
+                          <option value="instant">Instant</option>
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                        </select>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="ghost" className="rounded-full" onClick={() => setShowAlertComposer(false)}>
+                          Cancel
+                        </Button>
+                        <Button type="button" className="rounded-full" onClick={handleCreateCurrentAlert}>
+                          Create alert
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {(savedSearches.length > 0 || propertyAlerts.length > 0) && (
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-foreground">Saved searches</p>
+                          {savedSearches.length > 0 && (
+                            <span className="text-xs text-muted-foreground">{savedSearches.length} total</span>
+                          )}
+                        </div>
+                        {savedSearches.length > 0 ? (
+                          savedSearches.slice(0, 3).map((savedSearch) => (
+                            <div
+                              key={savedSearch.id}
+                              className="flex items-start justify-between gap-3 rounded-[22px] border border-border bg-card px-4 py-3"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => void handleApplySavedSearch(savedSearch)}
+                                className="min-w-0 flex-1 text-left transition hover:text-primary"
+                              >
+                                <p className="truncate text-sm font-medium text-foreground">{savedSearch.name}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {savedSearch.searchTerm || 'Filtered homes'} · {savedSearch.resultsCount} matches
+                                </p>
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`Delete ${savedSearch.name}`}
+                                className="rounded-full p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                                onClick={() => {
+                                  void deleteSavedSearch(savedSearch.id)
+                                    .then(() => toast.success('Saved search removed.'))
+                                    .catch((error) => {
+                                      console.error('Failed to delete saved search:', error);
+                                      toast.error('Unable to remove this saved search.');
+                                    });
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-[22px] border border-dashed border-border bg-card/70 px-4 py-5 text-sm text-muted-foreground">
+                            No saved searches yet.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold text-foreground">Property alerts</p>
+                          {propertyAlerts.length > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              {propertyAlerts.filter((alert) => alert.enabled).length} active
+                            </span>
+                          )}
+                        </div>
+                        {propertyAlerts.length > 0 ? (
+                          propertyAlerts.slice(0, 3).map((alert) => (
+                            <div
+                              key={alert.id}
+                              className="flex items-start justify-between gap-3 rounded-[22px] border border-border bg-card px-4 py-3"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-foreground">{alert.name}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {alert.frequency} · {alert.matchCount} current matches
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    'rounded-full px-3 py-1 text-xs font-medium transition',
+                                    alert.enabled
+                                      ? 'bg-secondary text-foreground'
+                                      : 'border border-border bg-background text-muted-foreground'
+                                  )}
+                                  onClick={() => {
+                                    void toggleAlert(alert.id)
+                                      .then(() =>
+                                        toast.success(alert.enabled ? 'Alert paused.' : 'Alert re-enabled.')
+                                      )
+                                      .catch((error) => {
+                                        console.error('Failed to toggle alert:', error);
+                                        toast.error('Unable to update this alert.');
+                                      });
+                                  }}
+                                >
+                                  {alert.enabled ? 'Active' : 'Paused'}
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={`Delete ${alert.name}`}
+                                  className="rounded-full p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                                  onClick={() => {
+                                    void deleteAlert(alert.id)
+                                      .then(() => toast.success('Alert removed.'))
+                                      .catch((error) => {
+                                        console.error('Failed to delete alert:', error);
+                                        toast.error('Unable to remove this alert.');
+                                      });
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-[22px] border border-dashed border-border bg-card/70 px-4 py-5 text-sm text-muted-foreground">
+                            No alerts yet. Create one from your current filters.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -542,7 +890,7 @@ export function Marketplace({
               type="button"
               variant="outline"
               onClick={() => setIsFilterPanelOpen(true)}
-              className="h-11 rounded-full border-border bg-card px-5"
+              className="h-11 rounded-full border-border bg-card px-5 sm:w-auto"
             >
               <SlidersHorizontal className="mr-2 h-4 w-4" />
               Filters
@@ -558,14 +906,14 @@ export function Marketplace({
                 type="button"
                 variant="outline"
                 onClick={() => compareSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="h-11 rounded-full border-border bg-card px-5"
+                className="h-11 rounded-full border-border bg-card px-5 sm:w-auto"
               >
                 <Scale className="mr-2 h-4 w-4" />
                 Compare {comparedHomes.length}
               </Button>
             )}
 
-            <div className="flex w-full items-center justify-between rounded-full border border-border bg-secondary/80 p-1 sm:w-auto sm:justify-start">
+            <div className="flex w-full items-center justify-between rounded-[18px] border border-border bg-secondary/80 p-1 sm:w-auto sm:justify-start">
               {[
                 { value: 'grid', icon: Grid3X3, label: 'Grid' },
                 { value: 'list', icon: List, label: 'List' },
@@ -596,7 +944,7 @@ export function Marketplace({
             <div className="flex w-full items-center justify-between gap-3 rounded-full border border-border bg-card px-4 py-2 shadow-sm sm:w-auto sm:justify-start">
               <Filter className="h-4 w-4 text-muted-foreground" />
               <select
-                className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none sm:flex-none"
+                className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none sm:min-w-[10rem] sm:flex-none"
                 value={sortBy}
                 onChange={(event) => setSortBy(event.target.value)}
               >
@@ -611,12 +959,12 @@ export function Marketplace({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
           <button
             type="button"
             onClick={() => setFilters({ ...safeFilters, type: [] })}
             className={cn(
-              'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+              'shrink-0 rounded-full border px-4 py-2 text-sm font-medium transition-colors',
               safeFilters.type.length === 0
                 ? 'border-transparent bg-secondary text-foreground shadow-sm'
                 : 'border-border bg-card text-muted-foreground hover:text-foreground'
@@ -631,7 +979,7 @@ export function Marketplace({
               type="button"
               onClick={() => handleTypeToggle(type)}
               className={cn(
-                'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+                'shrink-0 rounded-full border px-4 py-2 text-sm font-medium transition-colors',
                 safeFilters.type.includes(type)
                   ? 'border-transparent bg-secondary text-foreground shadow-sm'
                   : 'border-border bg-card text-muted-foreground hover:text-foreground'
@@ -646,7 +994,7 @@ export function Marketplace({
 
       {isMobile ? (
         <Drawer open={isFilterPanelOpen} onOpenChange={setIsFilterPanelOpen}>
-          <DrawerContent className="max-h-[92vh] rounded-t-[32px] border-border bg-background">
+          <DrawerContent className="max-h-[92vh] rounded-t-[32px] border-border bg-background pb-[env(safe-area-inset-bottom)]">
             <DrawerHeader>
               <DrawerTitle>Filter homes</DrawerTitle>
             </DrawerHeader>
@@ -730,7 +1078,7 @@ export function Marketplace({
       )}
 
       {!isSearching && filteredProperties.length === 0 && (
-        <section className="rounded-[32px] border border-dashed border-border bg-card px-6 py-12 text-center shadow-sm">
+        <section className="flex min-h-[16rem] flex-col items-center justify-center rounded-[32px] border border-dashed border-border bg-card px-6 py-12 text-center shadow-sm">
           <Clock className="mx-auto h-10 w-10 text-primary" />
           <h3 className="mt-4 text-xl font-semibold text-foreground">No homes found</h3>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
@@ -748,7 +1096,7 @@ export function Marketplace({
               variant="outline"
               onClick={() => {
                 setSearchTerm('');
-                void performSearch('', filters, currentUser?.id, properties);
+                void performSearch('', safeFilters, currentUser?.id, properties);
               }}
               className="rounded-full px-6"
             >
@@ -760,7 +1108,7 @@ export function Marketplace({
       )}
 
       {comparedHomes.length > 0 && (
-        <div className="fixed inset-x-3 bottom-[6.4rem] z-40 lg:bottom-6 lg:left-auto lg:right-6 lg:max-w-sm">
+        <div className="fixed inset-x-3 bottom-[calc(6.75rem+env(safe-area-inset-bottom))] z-40 lg:bottom-6 lg:left-auto lg:right-6 lg:max-w-sm">
           <button
             type="button"
             onClick={() => compareSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}

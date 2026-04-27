@@ -1,7 +1,8 @@
 import { registerSW } from 'virtual:pwa-register';
+import { isNativePlatform } from './services/nativeCapabilities';
 
 const enablePwaInDev = String(import.meta.env.VITE_ENABLE_PWA_DEV).toLowerCase() === 'true';
-const shouldRegisterPwa = import.meta.env.PROD || enablePwaInDev;
+const shouldRegisterPwa = !isNativePlatform() && (import.meta.env.PROD || enablePwaInDev);
 
 async function cleanupDevServiceWorkers() {
   if (!('serviceWorker' in navigator)) {

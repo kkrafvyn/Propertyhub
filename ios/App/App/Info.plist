@@ -22,6 +22,18 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>PropertyHub uses the camera so you can capture listing photos and verification documents.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>PropertyHub uses Face ID to help you securely unlock the app on supported devices.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>PropertyHub uses your location to show routes, nearby places, and tour reminders.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>PropertyHub uses your location to improve navigation and device reminders while you are actively using the app.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>PropertyHub uses your photo library so you can upload listing images and documents.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>PropertyHub may save generated photos or exports to your library when you choose to do so.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -47,5 +59,9 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

@@ -5,7 +5,7 @@ export const FallbackComponent = ({ title, onBack }: { title: string; onBack?: (
   <div className="min-h-screen flex items-center justify-center p-4">
     <div className="text-center max-w-md">
       <h2 className="text-2xl font-bold mb-4">{title}</h2>
-      <p className="text-muted-foreground mb-6">This feature is currently under development.</p>
+      <p className="text-muted-foreground mb-6">This workspace is temporarily unavailable.</p>
       {onBack && (
         <button
           onClick={onBack}
@@ -25,7 +25,7 @@ const createLazyComponent = (importFunc: () => Promise<any>, componentName: stri
       console.warn(`Failed to load ${componentName}:`, error);
       return {
         default: ({ onBack }: any) =>
-          <FallbackComponent title={`${componentName} Coming Soon`} onBack={onBack} />
+          <FallbackComponent title={`${componentName} Unavailable`} onBack={onBack} />
       };
     })
   );

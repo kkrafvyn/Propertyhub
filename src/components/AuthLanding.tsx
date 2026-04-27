@@ -13,7 +13,7 @@ interface AuthLandingProps {
   onNavigate: (state: AppState) => void;
 }
 
-const previewMetrics = [
+const browseMetrics = [
   { label: 'Response time', value: '< 5 min' },
   { label: 'Verified homes', value: '10,000+' },
   { label: 'Saved lists', value: 'Synced' },
@@ -21,10 +21,10 @@ const previewMetrics = [
 
 export const AuthLanding: React.FC<AuthLandingProps> = ({ onNavigate }) => {
   return (
-    <div className="theme-page-shell min-h-screen overflow-x-hidden">
+    <div className="theme-page-shell min-h-[100dvh] overflow-x-hidden">
       <div className="theme-page-glow absolute inset-0" />
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+      <div className="relative z-10 mx-auto flex min-h-[100dvh] max-w-7xl flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pb-6 sm:pt-6 lg:px-8 lg:pb-8 lg:pt-8">
         <header className="wire-navbar flex items-center justify-between gap-4 rounded-[30px] px-4 py-3 sm:px-5">
           <button
             type="button"
@@ -132,7 +132,7 @@ export const AuthLanding: React.FC<AuthLandingProps> = ({ onNavigate }) => {
             <div className="air-panel rounded-[36px] p-5 sm:p-6">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-sm text-muted-foreground">Live preview</div>
+                  <div className="text-sm text-muted-foreground">Browse snapshot</div>
                   <div className="mt-1 text-2xl font-semibold">PropertyHub browse view</div>
                 </div>
                 <div className="air-pill px-3 py-1 text-xs font-semibold text-muted-foreground">
@@ -176,7 +176,7 @@ export const AuthLanding: React.FC<AuthLandingProps> = ({ onNavigate }) => {
                 </div>
 
                 <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                  {previewMetrics.map((item) => (
+                  {browseMetrics.map((item) => (
                     <div key={item.label} className="air-surface-muted rounded-[22px] px-4 py-3">
                       <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
                         {item.label}

@@ -1,13 +1,14 @@
-import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Star, ThumbsUp, ThumbsDown, Filter, ArrowUpDown as Sort, MessageSquare } from 'lucide-react';
-import { Property, User as UserType, Review } from '../types';
-import { Button } from './ui/button';
-import { Textarea } from './ui/textarea';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { Filter, Loader2, MessageSquare, Star, ThumbsUp, ArrowUpDown as Sort } from 'lucide-react';
+import { toast } from 'sonner';
+import type { Property, Review, User as UserType } from '../types';
+import { createPropertyReview, loadPropertyReviews } from '../services/reviewDataService';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Badge } from './ui/badge';
-import { Avatar } from './ui/avatar';
-import { Separator } from './ui/separator';
+import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Textarea } from './ui/textarea';
 
 interface ReviewsSectionProps {
   property: Property;
@@ -42,149 +43,157 @@ const initialFormData: ReviewFormData = {
   },
 };
 
-export function ReviewsSection({ property, currentUser, userHasBooked, onSubmitReview }: ReviewsSectionProps) {
+const ratingCategories: Array<keyof ReviewFormData['categories']> = [
+  'cleanliness',
+  'communication',
+  'checkIn',
+  'accuracy',
+  'location',
+  'value',
+];
+
+const formatCategoryLabel = (value: string) =>
+  value.replace(/([A-Z])/g, ' $1').replace(/^./, (char) => char.toUpperCase());
+
+const buildAvatarFallback = (name: string) =>
+  name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((segment) => segment.charAt(0).toUpperCase())
+    .join('') || 'GU';
+
+export function ReviewsSection({
+  property,
+  currentUser,
+  userHasBooked,
+  onSubmitReview,
+}: ReviewsSectionProps) {
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [formData, setFormData] = useState<ReviewFormData>(initialFormData);
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'highest' | 'lowest'>('newest');
   const [filterBy, setFilterBy] = useState<'all' | '5' | '4' | '3' | '2' | '1'>('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Mock reviews data - in real app this would come from props or API
-  const mockReviews: Review[] = [
-    {
-      id: '1',
-      propertyId: property.id,
-      userId: 'user1',
-      userName: 'Sarah Johnson',
-      userAvatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b47c?w=150',
-      rating: 5,
-      comment: 'Amazing property! Everything was exactly as described. The host was very responsive and the location was perfect. Would definitely stay here again!',
-      categories: {
-        cleanliness: 5,
-        communication: 5,
-        checkIn: 5,
-        accuracy: 5,
-        location: 5,
-        value: 4,
-      },
-      createdAt: '2024-01-15',
-      helpful: 12,
-      verified: true,
-    },
-    {
-      id: '2',
-      propertyId: property.id,
-      userId: 'user2',
-      userName: 'Recent guest',
-      userAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-      rating: 4,
-      comment: 'Great stay overall. The place was clean and well-maintained. Only minor issue was the WiFi was a bit slow, but everything else was perfect.',
-      categories: {
-        cleanliness: 5,
-        communication: 4,
-        checkIn: 4,
-        accuracy: 4,
-        location: 4,
-        value: 4,
-      },
-      createdAt: '2024-01-10',
-      helpful: 8,
-      verified: true,
-    },
-    {
-      id: '3',
-      propertyId: property.id,
-      userId: 'user3',
-      userName: 'Emma Rodriguez',
-      userAvatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-      rating: 5,
-      comment: 'Absolutely loved this place! The host went above and beyond to make our stay comfortable. The amenities were top-notch and the location was ideal for exploring the city.',
-      categories: {
-        cleanliness: 5,
-        communication: 5,
-        checkIn: 5,
-        accuracy: 5,
-        location: 5,
-        value: 5,
-      },
-      createdAt: '2024-01-05',
-      helpful: 15,
-      verified: true,
-    },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchReviews = async () => {
+      setLoading(true);
+
+      try {
+        const nextReviews = await loadPropertyReviews(property.id);
+        if (!cancelled) {
+          setReviews(nextReviews);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(
+            error instanceof Error ? error.message : 'Unable to load property reviews.',
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void fetchReviews();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [property.id]);
 
   const filteredAndSortedReviews = useMemo(() => {
-    let filtered = mockReviews;
-    
-    // Filter by rating
-    if (filterBy !== 'all') {
-      filtered = filtered.filter(review => review.rating === parseInt(filterBy));
-    }
-    
-    // Sort reviews
-    filtered.sort((a, b) => {
+    const filteredReviews =
+      filterBy === 'all'
+        ? [...reviews]
+        : reviews.filter((review) => review.rating === Number.parseInt(filterBy, 10));
+
+    filteredReviews.sort((firstReview, secondReview) => {
       switch (sortBy) {
         case 'newest':
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          return (
+            new Date(secondReview.createdAt).getTime() -
+            new Date(firstReview.createdAt).getTime()
+          );
         case 'oldest':
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          return (
+            new Date(firstReview.createdAt).getTime() -
+            new Date(secondReview.createdAt).getTime()
+          );
         case 'highest':
-          return b.rating - a.rating;
+          return secondReview.rating - firstReview.rating;
         case 'lowest':
-          return a.rating - b.rating;
+          return firstReview.rating - secondReview.rating;
         default:
           return 0;
       }
     });
-    
-    return filtered;
-  }, [mockReviews, sortBy, filterBy]);
+
+    return filteredReviews;
+  }, [filterBy, reviews, sortBy]);
 
   const averageRating = useMemo(() => {
-    if (mockReviews.length === 0) return 0;
-    return mockReviews.reduce((sum, review) => sum + review.rating, 0) / mockReviews.length;
-  }, [mockReviews]);
+    if (reviews.length === 0) return 0;
+    return reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length;
+  }, [reviews]);
 
   const ratingDistribution = useMemo(() => {
     const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-    mockReviews.forEach(review => {
-      distribution[review.rating as keyof typeof distribution]++;
+
+    reviews.forEach((review) => {
+      distribution[review.rating as keyof typeof distribution] += 1;
     });
+
     return distribution;
-  }, [mockReviews]);
+  }, [reviews]);
 
   const categoryAverages = useMemo(() => {
-    if (mockReviews.length === 0) return {};
-    
-    const categories = ['cleanliness', 'communication', 'checkIn', 'accuracy', 'location', 'value'] as const;
-    const averages: Record<string, number> = {};
-    
-    categories.forEach(category => {
-      const sum = mockReviews.reduce((total, review) => total + review.categories[category], 0);
-      averages[category] = sum / mockReviews.length;
-    });
-    
-    return averages;
-  }, [mockReviews]);
+    if (reviews.length === 0) return {};
 
-  const renderStars = (rating: number, size: 'sm' | 'md' | 'lg' = 'md', interactive = false, onRatingChange?: (rating: number) => void) => {
-    const starSize = size === 'sm' ? 'w-4 h-4' : size === 'md' ? 'w-5 h-5' : 'w-6 h-6';
-    
+    return ratingCategories.reduce<Record<string, number>>((accumulator, category) => {
+      const sum = reviews.reduce(
+        (total, review) => total + review.categories[category],
+        0,
+      );
+      accumulator[category] = sum / reviews.length;
+      return accumulator;
+    }, {});
+  }, [reviews]);
+
+  const existingUserReview = useMemo(() => {
+    if (!currentUser) return null;
+    return reviews.find((review) => review.userId === currentUser.id) || null;
+  }, [currentUser, reviews]);
+
+  const renderStars = (
+    rating: number,
+    size: 'sm' | 'md' | 'lg' = 'md',
+    interactive = false,
+    onRatingChange?: (rating: number) => void,
+  ) => {
+    const starSize = size === 'sm' ? 'h-4 w-4' : size === 'md' ? 'h-5 w-5' : 'h-6 w-6';
+
     return (
       <div className="flex items-center space-x-1">
         {[1, 2, 3, 4, 5].map((star) => (
           <motion.button
             key={star}
+            type="button"
             className={interactive ? 'cursor-pointer' : 'cursor-default'}
-            onClick={() => interactive && onRatingChange?.(star)}
-            whileHover={interactive ? { scale: 1.1 } : {}}
-            whileTap={interactive ? { scale: 0.95 } : {}}
             disabled={!interactive}
+            onClick={() => interactive && onRatingChange?.(star)}
+            whileHover={interactive ? { scale: 1.08 } : {}}
+            whileTap={interactive ? { scale: 0.96 } : {}}
           >
             <Star
               className={`${starSize} ${
-                star <= rating
-                  ? 'text-yellow-400 fill-yellow-400'
+                star <= Math.round(rating)
+                  ? 'fill-yellow-400 text-yellow-400'
                   : 'text-gray-300 dark:text-gray-600'
               }`}
             />
@@ -196,27 +205,51 @@ export function ReviewsSection({ property, currentUser, userHasBooked, onSubmitR
 
   const handleSubmitReview = async () => {
     if (!currentUser || !userHasBooked) return;
-    
+
     setIsSubmitting(true);
-    
+
     try {
-      const newReview: Omit<Review, 'id' | 'createdAt'> = {
+      await createPropertyReview({
+        propertyId: property.id,
+        ownerId: property.ownerId,
+        reviewerId: currentUser.id,
+        rating: formData.rating,
+        comment: formData.comment,
+        verifiedBooking: userHasBooked,
+        categories: formData.categories,
+      });
+
+      const optimisticReview: Review = {
+        id: `review-${Date.now()}`,
         propertyId: property.id,
         userId: currentUser.id,
         userName: currentUser.name,
         userAvatar: currentUser.avatar || '',
         rating: formData.rating,
-        comment: formData.comment,
+        comment: formData.comment.trim(),
         categories: formData.categories,
+        createdAt: new Date().toISOString(),
         helpful: 0,
-        verified: true,
+        verified: userHasBooked,
       };
-      
-      onSubmitReview?.(newReview);
+
+      setReviews((previous) => [optimisticReview, ...previous]);
+      onSubmitReview?.({
+        propertyId: optimisticReview.propertyId,
+        userId: optimisticReview.userId,
+        userName: optimisticReview.userName,
+        userAvatar: optimisticReview.userAvatar,
+        rating: optimisticReview.rating,
+        comment: optimisticReview.comment,
+        categories: optimisticReview.categories,
+        helpful: optimisticReview.helpful,
+        verified: optimisticReview.verified,
+      });
       setShowReviewForm(false);
       setFormData(initialFormData);
+      toast.success('Review submitted successfully.');
     } catch (error) {
-      console.error('Error submitting review:', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to submit review.');
     } finally {
       setIsSubmitting(false);
     }
@@ -224,193 +257,220 @@ export function ReviewsSection({ property, currentUser, userHasBooked, onSubmitR
 
   return (
     <div className="space-y-8">
-      {/* Reviews Overview */}
       <motion.div
-        className="bg-card rounded-2xl p-6 border border-border"
+        className="rounded-2xl border border-border bg-card p-6"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Overall Rating */}
-          <div className="space-y-4">
-            <h3 className="text-xl font-semibold">Guest Reviews</h3>
-            
-            <div className="flex items-center space-x-4">
-              <div className="text-4xl font-bold">{averageRating.toFixed(1)}</div>
-              <div className="space-y-2">
-                {renderStars(averageRating, 'lg')}
-                <div className="text-sm text-muted-foreground">
-                  {mockReviews.length} review{mockReviews.length !== 1 ? 's' : ''}
+        {loading ? (
+          <div className="flex min-h-48 items-center justify-center">
+            <div className="flex items-center gap-3 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span>Loading guest reviews...</span>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+            <div className="space-y-4">
+              <h3 className="text-xl font-semibold">Guest Reviews</h3>
+
+              <div className="flex items-center space-x-4">
+                <div className="text-4xl font-bold">{averageRating.toFixed(1)}</div>
+                <div className="space-y-2">
+                  {renderStars(averageRating, 'lg')}
+                  <div className="text-sm text-muted-foreground">
+                    {reviews.length} review{reviews.length !== 1 ? 's' : ''}
+                  </div>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                {[5, 4, 3, 2, 1].map((rating) => (
+                  <div key={rating} className="flex items-center space-x-3">
+                    <div className="flex w-12 items-center space-x-1">
+                      <span className="text-sm">{rating}</span>
+                      <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                    </div>
+                    <div className="h-2 flex-1 rounded-full bg-muted">
+                      <div
+                        className="h-2 rounded-full bg-primary transition-all duration-500"
+                        style={{
+                          width: `${
+                            reviews.length > 0
+                              ? (ratingDistribution[rating as keyof typeof ratingDistribution] /
+                                  reviews.length) *
+                                100
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+                    <span className="w-8 text-sm text-muted-foreground">
+                      {ratingDistribution[rating as keyof typeof ratingDistribution]}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Rating Distribution */}
-            <div className="space-y-2">
-              {[5, 4, 3, 2, 1].map((rating) => (
-                <div key={rating} className="flex items-center space-x-3">
-                  <div className="flex items-center space-x-1 w-12">
-                    <span className="text-sm">{rating}</span>
-                    <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                  </div>
-                  <div className="flex-1 bg-muted rounded-full h-2">
-                    <div
-                      className="bg-primary rounded-full h-2 transition-all duration-500"
-                      style={{
-                        width: `${mockReviews.length > 0 ? (ratingDistribution[rating as keyof typeof ratingDistribution] / mockReviews.length) * 100 : 0}%`,
-                      }}
-                    />
-                  </div>
-                  <span className="text-sm text-muted-foreground w-8">
-                    {ratingDistribution[rating as keyof typeof ratingDistribution]}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+            <div className="space-y-4">
+              <h4 className="font-semibold">Rating Categories</h4>
 
-          {/* Category Ratings */}
-          <div className="space-y-4">
-            <h4 className="font-semibold">Rating Categories</h4>
-            
-            <div className="grid grid-cols-2 gap-4">
-              {Object.entries(categoryAverages).map(([category, average]) => (
-                <div key={category} className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="capitalize">{category.replace(/([A-Z])/g, ' $1')}</span>
-                    <span className="font-medium">{average.toFixed(1)}</span>
+              <div className="grid grid-cols-2 gap-4">
+                {Object.entries(categoryAverages).map(([category, average]) => (
+                  <div key={category} className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>{formatCategoryLabel(category)}</span>
+                      <span className="font-medium">{average.toFixed(1)}</span>
+                    </div>
+                    {renderStars(average, 'sm')}
                   </div>
-                  {renderStars(average, 'sm')}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </motion.div>
 
-      {/* Write Review Button */}
-      {currentUser && userHasBooked && !showReviewForm && (
+      {currentUser && userHasBooked && !showReviewForm && !existingUserReview ? (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <Button
-            onClick={() => setShowReviewForm(true)}
-            className="w-full"
-            size="lg"
-          >
-            <MessageSquare className="w-5 h-5 mr-2" />
+          <Button onClick={() => setShowReviewForm(true)} className="w-full" size="lg">
+            <MessageSquare className="mr-2 h-5 w-5" />
             Write a Review
           </Button>
         </motion.div>
-      )}
+      ) : null}
 
-      {/* Review Form */}
+      {existingUserReview && !showReviewForm ? (
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <p className="font-medium text-foreground">You already reviewed this property.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Thanks for sharing your experience. Your review is visible below with the rest.
+          </p>
+        </div>
+      ) : null}
+
       <AnimatePresence>
-        {showReviewForm && (
+        {showReviewForm ? (
           <motion.div
-            className="bg-card rounded-2xl p-6 border border-border"
+            className="rounded-2xl border border-border bg-card p-6"
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <h3 className="text-xl font-semibold mb-6">Write Your Review</h3>
-            
+            <h3 className="mb-6 text-xl font-semibold">Write Your Review</h3>
+
             <div className="space-y-6">
-              {/* Overall Rating */}
               <div className="space-y-3">
                 <label className="text-sm font-medium">Overall Rating</label>
-                {renderStars(formData.rating, 'lg', true, (rating) => 
-                  setFormData(prev => ({ ...prev, rating }))
+                {renderStars(formData.rating, 'lg', true, (rating) =>
+                  setFormData((previous) => ({ ...previous, rating })),
                 )}
               </div>
 
-              {/* Category Ratings */}
               <div className="space-y-4">
                 <label className="text-sm font-medium">Category Ratings</label>
                 <div className="grid grid-cols-2 gap-4">
                   {Object.entries(formData.categories).map(([category, rating]) => (
                     <div key={category} className="space-y-2">
-                      <div className="text-sm capitalize">
-                        {category.replace(/([A-Z])/g, ' $1')}
-                      </div>
+                      <div className="text-sm">{formatCategoryLabel(category)}</div>
                       {renderStars(rating, 'sm', true, (newRating) =>
-                        setFormData(prev => ({
-                          ...prev,
-                          categories: { ...prev.categories, [category]: newRating }
-                        }))
+                        setFormData((previous) => ({
+                          ...previous,
+                          categories: {
+                            ...previous.categories,
+                            [category]: newRating,
+                          },
+                        })),
                       )}
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Comment */}
               <div className="space-y-3">
                 <label className="text-sm font-medium">Your Review</label>
                 <Textarea
                   placeholder="Share your experience with future guests..."
-                  value={formData.comment}
-                  onChange={(e) => setFormData(prev => ({ ...prev, comment: e.target.value }))}
                   rows={4}
+                  value={formData.comment}
+                  onChange={(event) =>
+                    setFormData((previous) => ({
+                      ...previous,
+                      comment: event.target.value,
+                    }))
+                  }
                 />
               </div>
 
-              {/* Action Buttons */}
               <div className="flex justify-end space-x-3">
                 <Button
                   variant="outline"
-                  onClick={() => setShowReviewForm(false)}
                   disabled={isSubmitting}
+                  onClick={() => setShowReviewForm(false)}
                 >
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleSubmitReview}
                   disabled={formData.rating === 0 || !formData.comment.trim() || isSubmitting}
+                  onClick={() => {
+                    void handleSubmitReview();
+                  }}
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit Review'}
                 </Button>
               </div>
             </div>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      {/* Filters and Sorting */}
-      {mockReviews.length > 0 && (
+      {!loading && reviews.length > 0 ? (
         <motion.div
-          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+          className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
-              <Filter className="w-4 h-4" />
+              <Filter className="h-4 w-4" />
               <span className="text-sm font-medium">Filter:</span>
-              <Select value={filterBy} onValueChange={(value: any) => setFilterBy(value)}>
+              <Select
+                value={filterBy}
+                onValueChange={(value: 'all' | '5' | '4' | '3' | '2' | '1') =>
+                  setFilterBy(value)
+                }
+              >
                 <SelectTrigger className="w-24">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="5">5★</SelectItem>
-                  <SelectItem value="4">4★</SelectItem>
-                  <SelectItem value="3">3★</SelectItem>
-                  <SelectItem value="2">2★</SelectItem>
-                  <SelectItem value="1">1★</SelectItem>
+                  <SelectItem value="5">5 stars</SelectItem>
+                  <SelectItem value="4">4 stars</SelectItem>
+                  <SelectItem value="3">3 stars</SelectItem>
+                  <SelectItem value="2">2 stars</SelectItem>
+                  <SelectItem value="1">1 star</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="flex items-center space-x-2">
-              <Sort className="w-4 h-4" />
+              <Sort className="h-4 w-4" />
               <span className="text-sm font-medium">Sort:</span>
-              <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+              <Select
+                value={sortBy}
+                onValueChange={(value: 'newest' | 'oldest' | 'highest' | 'lowest') =>
+                  setSortBy(value)
+                }
+              >
                 <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>
@@ -423,40 +483,39 @@ export function ReviewsSection({ property, currentUser, userHasBooked, onSubmitR
               </Select>
             </div>
           </div>
-          
+
           <div className="text-sm text-muted-foreground">
-            Showing {filteredAndSortedReviews.length} of {mockReviews.length} reviews
+            Showing {filteredAndSortedReviews.length} of {reviews.length} reviews
           </div>
         </motion.div>
-      )}
+      ) : null}
 
-      {/* Reviews List */}
       <div className="space-y-6">
         <AnimatePresence>
           {filteredAndSortedReviews.map((review, index) => (
             <motion.div
               key={review.id}
-              className="bg-card rounded-2xl p-6 border border-border"
+              className="rounded-2xl border border-border bg-card p-6"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
+              transition={{ duration: 0.5, delay: index * 0.08 }}
             >
               <div className="space-y-4">
-                {/* Review Header */}
                 <div className="flex items-start justify-between">
                   <div className="flex items-center space-x-3">
-                    <Avatar className="w-10 h-10">
-                      <img src={review.userAvatar} alt={review.userName} />
+                    <Avatar className="h-10 w-10">
+                      <AvatarImage src={review.userAvatar} alt={review.userName} />
+                      <AvatarFallback>{buildAvatarFallback(review.userName)}</AvatarFallback>
                     </Avatar>
                     <div>
                       <div className="flex items-center space-x-2">
                         <span className="font-medium">{review.userName}</span>
-                        {review.verified && (
+                        {review.verified ? (
                           <Badge variant="secondary" className="text-xs">
                             Verified
                           </Badge>
-                        )}
+                        ) : null}
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {new Date(review.createdAt).toLocaleDateString('en-US', {
@@ -467,31 +526,29 @@ export function ReviewsSection({ property, currentUser, userHasBooked, onSubmitR
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="text-right">
                     {renderStars(review.rating, 'sm')}
-                    <div className="text-sm text-muted-foreground mt-1">
-                      {review.rating}/5
-                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">{review.rating}/5</div>
                   </div>
                 </div>
 
-                {/* Review Content */}
-                <p className="text-muted-foreground leading-relaxed">
-                  {review.comment}
-                </p>
+                <p className="leading-relaxed text-muted-foreground">{review.comment}</p>
 
-                {/* Helpfulness */}
-                <div className="flex items-center justify-between pt-4 border-t border-border">
+                <div className="flex items-center justify-between border-t border-border pt-4">
                   <div className="flex items-center space-x-4">
-                    <button className="flex items-center space-x-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      <ThumbsUp className="w-4 h-4" />
+                    <button className="flex items-center space-x-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
+                      <ThumbsUp className="h-4 w-4" />
                       <span>Helpful ({review.helpful})</span>
                     </button>
                   </div>
-                  
+
                   <div className="text-xs text-muted-foreground">
-                    Stayed in {new Date(review.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    Stayed in{' '}
+                    {new Date(review.createdAt).toLocaleDateString('en-US', {
+                      month: 'long',
+                      year: 'numeric',
+                    })}
                   </div>
                 </div>
               </div>
@@ -500,20 +557,20 @@ export function ReviewsSection({ property, currentUser, userHasBooked, onSubmitR
         </AnimatePresence>
       </div>
 
-      {mockReviews.length === 0 && (
+      {!loading && reviews.length === 0 ? (
         <motion.div
-          className="text-center py-12"
+          className="py-12 text-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5 }}
         >
-          <MessageSquare className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">No reviews yet</h3>
+          <MessageSquare className="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
+          <h3 className="mb-2 text-lg font-medium">No reviews yet</h3>
           <p className="text-muted-foreground">
-            Be the first to share your experience with this property!
+            Be the first to share your experience with this property.
           </p>
         </motion.div>
-      )}
+      ) : null}
     </div>
   );
 }

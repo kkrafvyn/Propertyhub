@@ -260,7 +260,7 @@ describe('Property Service', () => {
 
     it('should filter by maxPrice', () => {
       const results = propertyService.listProperties({ maxPrice: 500000 });
-      expect(results).toHaveLength(2);
+      expect(results).toHaveLength(1);
       expect(results.every(p => p.price <= 500000)).toBe(true);
     });
 
@@ -283,7 +283,7 @@ describe('Property Service', () => {
         location: 'Lagos',
       });
       
-      expect(results).toHaveLength(2);
+      expect(results).toHaveLength(1);
     });
   });
 

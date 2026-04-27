@@ -1,6 +1,7 @@
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import type { User, UserPreferences, UserRole } from '../types';
 import type { UserDB } from '../types/database';
+import { normalizeUserRole } from './roleCapabilities';
 
 export const defaultAuthPreferences: UserPreferences = {
   theme: 'system',
@@ -10,6 +11,13 @@ export const defaultAuthPreferences: UserPreferences = {
     email: true,
     sms: false,
     marketing: false,
+    inApp: true,
+    soundEnabled: true,
+    doNotDisturb: {
+      enabled: false,
+      startTime: '22:00',
+      endTime: '07:00',
+    },
   },
   privacy: {
     showProfile: true,
@@ -19,6 +27,13 @@ export const defaultAuthPreferences: UserPreferences = {
     currency: 'GHS',
     dateFormat: 'DD/MM/YYYY',
     timeFormat: '12h',
+  },
+  security: {
+    biometrics: {
+      enabled: false,
+      promptOnLaunch: false,
+      allowDeviceCredentials: true,
+    },
   },
 };
 
@@ -47,7 +62,7 @@ export const buildAuthAvatar = (authUser: SupabaseAuthUser): string | undefined 
 
 export const buildAuthRole = (authUser: SupabaseAuthUser): UserRole | undefined => {
   const role = getAuthMetadataValue(authUser, 'role');
-  return role?.trim() || undefined;
+  return role?.trim() ? normalizeUserRole(role) : undefined;
 };
 
 export const mapSupabaseUserToAppUser = (
@@ -58,7 +73,7 @@ export const mapSupabaseUserToAppUser = (
   id: authUser.id,
   email: profile?.email || authUser.email || '',
   name: profile?.name || buildAuthDisplayName(authUser),
-  role: profile?.role || preferredRole || buildAuthRole(authUser) || 'user',
+  role: normalizeUserRole(profile?.role || preferredRole || buildAuthRole(authUser) || 'user'),
   status: profile?.status,
   avatar: profile?.avatar || buildAuthAvatar(authUser),
   verified: profile?.verified ?? Boolean(authUser.email_confirmed_at),

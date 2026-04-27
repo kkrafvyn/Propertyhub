@@ -1,4 +1,3 @@
-"use client";
 
 import React, { useEffect, useState } from "react";
 import { Toaster as Sonner, ToasterProps } from "sonner";

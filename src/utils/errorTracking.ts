@@ -1,4 +1,5 @@
 import { ErrorDetails, ErrorCategory, ErrorContext, AnalyticsEvent } from '../types';
+import { sendMonitoringBatch } from './monitoring';
 
 /**
  * Enhanced Error Tracking System
@@ -253,6 +254,21 @@ class ErrorTracker {
       const existingErrors = this.getStoredErrors();
       const allErrors = [...existingErrors, ...errorsToFlush].slice(-200); // Keep last 200 errors
       localStorage.setItem('propertyHub_errorLogs', JSON.stringify(allErrors));
+
+      void sendMonitoringBatch(
+        'client_error_flush',
+        errorsToFlush.map((error) => ({
+          code: error.code,
+          message: error.message,
+          category: error.category,
+          severity: error.severity,
+          timestamp: error.timestamp,
+          sessionId: error.sessionId,
+          userId: error.userId,
+          url: error.url,
+          context: error.context,
+        }))
+      );
 
     } catch (error) {
       console.error('Failed to flush errors:', error);

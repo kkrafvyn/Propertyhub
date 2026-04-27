@@ -43,8 +43,5 @@ export {
   type UseMessagingReturn,
 } from './useMessaging';
 
-// Existing hooks
-export { useAppState } from './useAppState';
 export { useMobile } from './useMobile';
-export { useAppCore } from './useAppCore';
 export { useAppContext } from './useAppContext';

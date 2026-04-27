@@ -16,6 +16,7 @@
  */
 
 import React from 'react';
+import { envConfig } from '../../utils/envConfig';
 
 interface ChatMessage {
   id: string;
@@ -89,7 +90,7 @@ export class ExpoWebSocketService {
   private typingTimers: Map<string, any> = new Map();
 
   constructor(options: ConnectionOptions = {}) {
-    this.url = options.url || 'wss://your-websocket-server.com';
+    this.url = options.url || envConfig.WEBSOCKET_URL || '';
     this.reconnectInterval = options.reconnectInterval || 3000;
     this.maxReconnectAttempts = options.maxReconnectAttempts || 10;
     
@@ -135,6 +136,11 @@ export class ExpoWebSocketService {
 
   async connect(userId: string): Promise<boolean> {
     this.userId = userId;
+
+    if (!this.url) {
+      console.warn('Chat WebSocket URL is not configured. Set VITE_WEBSOCKET_URL or VITE_API_URL.');
+      return false;
+    }
     
     if (this.ws?.readyState === WebSocket.OPEN) {
       console.log('💬 WebSocket already connected');
@@ -496,32 +502,8 @@ export class ExpoWebSocketService {
     return this.reconnectAttempts;
   }
 
-  // Mock Methods for Demo (replace with real server integration)
-  simulateIncomingMessage(roomId: string, fromUserId: string, content: string) {
-    const mockMessage: ChatMessage = {
-      id: `mock_${Date.now()}`,
-      roomId,
-      senderId: fromUserId,
-      senderName: 'Guest contact',
-      content,
-      type: 'text',
-      timestamp: new Date().toISOString(),
-      status: 'delivered'
-    };
-
-    // Simulate network delay
-    setTimeout(() => {
-      this.emit('message_received', mockMessage);
-    }, Math.random() * 1000 + 500);
-  }
-
-  simulateTyping(roomId: string, userId: string, isTyping: boolean) {
-    this.emit('typing_update', {
-      roomId,
-      userId,
-      isTyping,
-      userName: 'Guest contact'
-    });
+  getConfiguredUrl(): string {
+    return this.url;
   }
 }
 
@@ -529,7 +511,12 @@ export class ExpoWebSocketService {
 let chatServiceInstance: ExpoWebSocketService | null = null;
 
 export const getChatService = (options?: ConnectionOptions): ExpoWebSocketService => {
-  if (!chatServiceInstance) {
+  const requestedUrl = options?.url || envConfig.WEBSOCKET_URL || '';
+
+  if (!chatServiceInstance || (requestedUrl && chatServiceInstance.getConfiguredUrl() !== requestedUrl)) {
+    if (chatServiceInstance) {
+      chatServiceInstance.disconnect();
+    }
     chatServiceInstance = new ExpoWebSocketService(options);
   }
   return chatServiceInstance;

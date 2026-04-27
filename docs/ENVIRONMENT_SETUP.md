@@ -1,5 +1,7 @@
 # Environment Setup Guide
 
+> Server-only secrets such as Paystack, Flutterwave, webhook, and private VAPID keys should not be added to `.env.local`. Use [SERVER_SECRETS_SETUP.md](./SERVER_SECRETS_SETUP.md) for the secure deployment flow.
+
 ## Quick Fix for `process is not defined` Error
 
 The error you encountered is caused by trying to access `process.env` in the browser environment. Here's how to fix it:

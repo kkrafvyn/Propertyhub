@@ -7,6 +7,7 @@
 
 import crypto from 'crypto';
 import { productionPaymentConfig } from './productionPaymentConfig';
+import { sendMonitoringEvent } from './monitoring';
 
 export interface WebhookVerificationResult {
   isValid: boolean;
@@ -351,6 +352,13 @@ export function logWebhookSecurityEvent(
     environment: productionPaymentConfig.isProduction ? 'production' : 'development',
     ...details
   };
+
+  void sendMonitoringEvent({
+    type: 'webhook_security',
+    name: event,
+    payload: logEntry,
+    timestamp: new Date().toISOString(),
+  });
 
   // In production, send to monitoring service
   if (productionPaymentConfig.isProduction) {

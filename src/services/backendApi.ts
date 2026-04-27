@@ -1,6 +1,6 @@
 import { envConfig } from '../utils/envConfig';
 
-const BACKEND_BASE_URL = (envConfig.API_URL || 'http://localhost:8080').replace(/\/$/, '');
+const BACKEND_BASE_URL = envConfig.API_URL.replace(/\/$/, '');
 
 const AUTH_TOKEN_KEYS = [
   'auth_token',
@@ -62,6 +62,9 @@ interface BackendRequestOptions extends RequestInit {
 
 const buildUrl = (endpoint: string): string => {
   if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) return endpoint;
+  if (!BACKEND_BASE_URL) {
+    throw new Error('Backend API is not configured. Set VITE_API_URL for this deployment.');
+  }
   return `${BACKEND_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 };
 

@@ -1,7 +1,7 @@
 import { LocationData } from '../types';
 
 // Google Maps API configuration
-const GOOGLE_MAPS_API_KEY = 'AIzaSyC4slId_coCqTJDDDRyhjkDgHtIlOWNojU';
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() || '';
 const GOOGLE_MAPS_SCRIPT_ID = 'google-maps-script';
 
 // Global interface for Google Maps
@@ -65,6 +65,15 @@ class GoogleMapsService {
     }
 
     this.loadPromise = new Promise((resolve, reject) => {
+      if (!GOOGLE_MAPS_API_KEY) {
+        reject(
+          new Error(
+            'Google Maps API key is not configured. Set VITE_GOOGLE_MAPS_API_KEY to enable maps features.',
+          ),
+        );
+        return;
+      }
+
       // Check if script already exists
       const existingScript = document.getElementById(GOOGLE_MAPS_SCRIPT_ID);
       if (existingScript) {

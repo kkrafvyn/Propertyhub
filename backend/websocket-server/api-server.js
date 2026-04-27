@@ -297,6 +297,702 @@ app.get('/api/v1/properties',
 );
 
 // ============================================================================
+// BOOKING MANAGEMENT ENDPOINTS
+// ============================================================================
+
+/**
+ * POST /api/v1/bookings
+ * Create a new booking for the authenticated user
+ */
+app.post('/api/v1/bookings',
+  authenticateToken,
+  [
+    body('property_id').optional().isUUID(),
+    body('propertyId').optional().isUUID(),
+    body('check_in').optional().isISO8601(),
+    body('checkIn').optional().isISO8601(),
+    body('check_out').optional().isISO8601(),
+    body('checkOut').optional().isISO8601(),
+    body('guests').optional().isInt({ min: 1 }),
+    body('total_price').optional().isFloat({ min: 0 }),
+    body('totalPrice').optional().isFloat({ min: 0 }),
+    body('currency').optional().isString(),
+    body('note').optional().isString(),
+    body('payment_status').optional().isString(),
+    body('paymentMethod').optional().isString(),
+    body('payment_method').optional().isString()
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const propertyId = req.body.property_id || req.body.propertyId;
+      const checkIn = req.body.check_in || req.body.checkIn;
+      const checkOut = req.body.check_out || req.body.checkOut;
+
+      if (!propertyId || !checkIn || !checkOut) {
+        return res.status(400).json({
+          success: false,
+          error: 'propertyId, checkIn, and checkOut are required'
+        });
+      }
+
+      let ownerId = req.body.owner_id || req.body.ownerId || null;
+      if (!ownerId) {
+        const { data: property, error: propertyError } = await supabase
+          .from('properties')
+          .select('owner_id, landlord_id')
+          .eq('id', propertyId)
+          .single();
+
+        if (propertyError) throw propertyError;
+        ownerId = property?.owner_id || property?.landlord_id || null;
+      }
+
+      const payload = {
+        property_id: propertyId,
+        user_id: req.userId,
+        owner_id: ownerId,
+        check_in: checkIn,
+        check_out: checkOut,
+        status: req.body.status || 'pending',
+        guests: req.body.guests || 1,
+        total_price: req.body.total_price ?? req.body.totalPrice ?? null,
+        currency: req.body.currency || 'GHS',
+        note: req.body.note || null,
+        payment_status: req.body.payment_status || req.body.paymentStatus || 'pending',
+        payment_method: req.body.payment_method || req.body.paymentMethod || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      logger.error('Booking creation error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * GET /api/v1/bookings/user/:userId
+ * Get bookings for the authenticated user
+ */
+app.get('/api/v1/bookings/user/:userId',
+  authenticateToken,
+  [query('limit').optional().isInt({ min: 1, max: 100 })],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const limit = Number(req.query.limit || 50);
+
+      if (req.userId !== userId && req.userRole !== 'admin') {
+        return res.status(403).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('user_id', userId)
+        .order('check_in', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      res.json({ success: true, data: data || [] });
+    } catch (error) {
+      logger.error('User bookings retrieval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * GET /api/v1/bookings/:bookingId
+ * Get booking by ID
+ */
+app.get('/api/v1/bookings/:bookingId',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { bookingId } = req.params;
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('id', bookingId)
+        .single();
+
+      if (error) throw error;
+
+      if (
+        data.user_id !== req.userId &&
+        data.owner_id !== req.userId &&
+        req.userRole !== 'admin'
+      ) {
+        return res.status(403).json({ success: false, error: 'Unauthorized' });
+      }
+
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error('Booking retrieval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * PATCH /api/v1/bookings/:bookingId/status
+ * Update booking status
+ */
+app.patch('/api/v1/bookings/:bookingId/status',
+  authenticateToken,
+  [body('status').isString().notEmpty()],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const { bookingId } = req.params;
+      const { status } = req.body;
+
+      const { data: booking, error: bookingError } = await supabase
+        .from('bookings')
+        .select('id, user_id, owner_id')
+        .eq('id', bookingId)
+        .single();
+
+      if (bookingError) throw bookingError;
+
+      if (
+        booking.user_id !== req.userId &&
+        booking.owner_id !== req.userId &&
+        req.userRole !== 'admin'
+      ) {
+        return res.status(403).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const { data, error } = await supabase
+        .from('bookings')
+        .update({
+          status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bookingId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error('Booking status update error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+// ============================================================================
+// SAVED HOMES, SEARCH HISTORY, SAVED SEARCHES, AND ALERTS
+// ============================================================================
+
+/**
+ * GET /api/v1/favorites/:userId
+ * Get saved homes for a user
+ */
+app.get('/api/v1/favorites/:userId',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      if (req.userId !== userId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+
+      const { data, error } = await supabase
+        .from('favorites')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      res.json({ success: true, data: data || [] });
+    } catch (error) {
+      logger.error('Favorites retrieval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/favorites
+ * Save a property for the authenticated user
+ */
+app.post('/api/v1/favorites',
+  authenticateToken,
+  [
+    body('propertyId').isUUID(),
+    body('note').optional().isString(),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { propertyId, note } = req.body;
+
+      const { data, error } = await supabase
+        .from('favorites')
+        .upsert(
+          {
+            user_id: userId,
+            property_id: propertyId,
+            note,
+            created_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,property_id' }
+        )
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      logger.error('Favorite creation error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/favorites/:propertyId
+ * Remove a saved property for the authenticated user
+ */
+app.delete('/api/v1/favorites/:propertyId',
+  authenticateToken,
+  [param('propertyId').isUUID()],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { propertyId } = req.params;
+
+      const { error } = await supabase
+        .from('favorites')
+        .delete()
+        .eq('user_id', userId)
+        .eq('property_id', propertyId);
+
+      if (error) throw error;
+      res.json({ success: true, data: { propertyId } });
+    } catch (error) {
+      logger.error('Favorite deletion error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * GET /api/v1/search/history/:userId
+ * Get search history for a user
+ */
+app.get('/api/v1/search/history/:userId',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const limit = Number(req.query.limit || 10);
+
+      if (req.userId !== userId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+
+      const { data, error } = await supabase
+        .from('search_history')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      res.json({ success: true, data: data || [] });
+    } catch (error) {
+      logger.error('Search history retrieval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/search/history
+ * Record a search action
+ */
+app.post('/api/v1/search/history',
+  authenticateToken,
+  [
+    body('query').isString().notEmpty(),
+    body('filters').optional().isObject(),
+    body('resultsCount').optional().isInt({ min: 0 }),
+    body('clickedPropertyId').optional().isUUID(),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { query: searchQuery, filters, resultsCount, clickedPropertyId } = req.body;
+
+      const { data, error } = await supabase
+        .from('search_history')
+        .insert({
+          user_id: userId,
+          query: searchQuery,
+          filters: filters || {},
+          results_count: resultsCount,
+          clicked_property_id: clickedPropertyId,
+          created_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      logger.error('Search history insert error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/search/history/:userId
+ * Clear search history for a user
+ */
+app.delete('/api/v1/search/history/:userId',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      if (req.userId !== userId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+
+      const { error } = await supabase.from('search_history').delete().eq('user_id', userId);
+      if (error) throw error;
+
+      res.json({ success: true, data: { userId } });
+    } catch (error) {
+      logger.error('Search history clear error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * GET /api/v1/search/saved/:userId
+ * Get saved searches for a user
+ */
+app.get('/api/v1/search/saved/:userId',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      if (req.userId !== userId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+
+      const { data, error } = await supabase
+        .from('saved_searches')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      res.json({ success: true, data: data || [] });
+    } catch (error) {
+      logger.error('Saved searches retrieval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/search/saved
+ * Create a saved search
+ */
+app.post('/api/v1/search/saved',
+  authenticateToken,
+  [
+    body('name').isString().notEmpty(),
+    body('searchTerm').optional().isString(),
+    body('filters').optional().isObject(),
+    body('resultsCount').optional().isInt({ min: 0 }),
+    body('alertEnabled').optional().isBoolean(),
+    body('alertFrequency').optional().isIn(['instant', 'daily', 'weekly']),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const {
+        name,
+        searchTerm,
+        filters,
+        resultsCount,
+        alertEnabled,
+        alertFrequency,
+      } = req.body;
+      const timestamp = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from('saved_searches')
+        .insert({
+          user_id: userId,
+          name,
+          search_term: searchTerm,
+          filters: filters || {},
+          results_count: resultsCount || 0,
+          alert_enabled: alertEnabled || false,
+          alert_frequency: alertFrequency || 'daily',
+          created_at: timestamp,
+          updated_at: timestamp,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      logger.error('Saved search creation error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/search/saved/:savedSearchId
+ * Update a saved search
+ */
+app.put('/api/v1/search/saved/:savedSearchId',
+  authenticateToken,
+  [param('savedSearchId').isUUID()],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { savedSearchId } = req.params;
+
+      const { data, error } = await supabase
+        .from('saved_searches')
+        .update({
+          ...req.body,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', savedSearchId)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error('Saved search update error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/search/saved/:savedSearchId
+ * Delete a saved search
+ */
+app.delete('/api/v1/search/saved/:savedSearchId',
+  authenticateToken,
+  [param('savedSearchId').isUUID()],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { savedSearchId } = req.params;
+
+      const { error } = await supabase
+        .from('saved_searches')
+        .delete()
+        .eq('id', savedSearchId)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+      res.json({ success: true, data: { id: savedSearchId } });
+    } catch (error) {
+      logger.error('Saved search deletion error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * GET /api/v1/search/alerts/:userId
+ * Get property alerts for a user
+ */
+app.get('/api/v1/search/alerts/:userId',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      if (req.userId !== userId) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+
+      const { data, error } = await supabase
+        .from('property_alerts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      res.json({ success: true, data: data || [] });
+    } catch (error) {
+      logger.error('Property alerts retrieval error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * POST /api/v1/search/alerts
+ * Create a property alert
+ */
+app.post('/api/v1/search/alerts',
+  authenticateToken,
+  [
+    body('name').isString().notEmpty(),
+    body('criteria').optional().isObject(),
+    body('frequency').optional().isIn(['instant', 'daily', 'weekly']),
+    body('enabled').optional().isBoolean(),
+    body('matchCount').optional().isInt({ min: 0 }),
+    body('email').optional().isString(),
+    body('pushNotifications').optional().isBoolean(),
+  ],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const {
+        name,
+        criteria,
+        frequency,
+        enabled,
+        matchCount,
+        email,
+        pushNotifications,
+      } = req.body;
+      const timestamp = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from('property_alerts')
+        .insert({
+          user_id: userId,
+          name,
+          criteria: criteria || {},
+          frequency: frequency || 'daily',
+          enabled: enabled !== false,
+          match_count: matchCount || 0,
+          email,
+          push_notifications: pushNotifications !== false,
+          created_at: timestamp,
+          updated_at: timestamp,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.status(201).json({ success: true, data });
+    } catch (error) {
+      logger.error('Property alert creation error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * PUT /api/v1/search/alerts/:alertId
+ * Update a property alert
+ */
+app.put('/api/v1/search/alerts/:alertId',
+  authenticateToken,
+  [param('alertId').isUUID()],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { alertId } = req.params;
+
+      const payload = {
+        ...req.body,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (Object.prototype.hasOwnProperty.call(payload, 'pushNotifications')) {
+        payload.push_notifications = payload.pushNotifications;
+        delete payload.pushNotifications;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(payload, 'matchCount')) {
+        payload.match_count = payload.matchCount;
+        delete payload.matchCount;
+      }
+
+      const { data, error } = await supabase
+        .from('property_alerts')
+        .update(payload)
+        .eq('id', alertId)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error('Property alert update error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+/**
+ * DELETE /api/v1/search/alerts/:alertId
+ * Delete a property alert
+ */
+app.delete('/api/v1/search/alerts/:alertId',
+  authenticateToken,
+  [param('alertId').isUUID()],
+  handleValidationErrors,
+  async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { alertId } = req.params;
+
+      const { error } = await supabase
+        .from('property_alerts')
+        .delete()
+        .eq('id', alertId)
+        .eq('user_id', userId);
+
+      if (error) throw error;
+      res.json({ success: true, data: { id: alertId } });
+    } catch (error) {
+      logger.error('Property alert deletion error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+// ============================================================================
 // MEDIA & STORAGE ENDPOINTS
 // ============================================================================
 
@@ -416,16 +1112,51 @@ app.get('/api/v1/payments/:paymentId/verify',
     try {
       const { paymentId } = req.params;
 
-      const { data, error } = await supabase
+      let paymentRecord = null;
+
+      const { data: paymentById, error: paymentByIdError } = await supabase
         .from('payments')
         .select('*')
         .eq('id', paymentId)
-        .eq('user_id', req.userId)
         .single();
 
-      if (error) throw error;
+      if (!paymentByIdError && paymentById) {
+        paymentRecord = paymentById;
+      } else {
+        const { data: paymentByReference, error: paymentByReferenceError } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('reference_id', paymentId)
+          .single();
 
-      res.json({ success: true, data });
+        if (!paymentByReferenceError && paymentByReference) {
+          paymentRecord = paymentByReference;
+        }
+      }
+
+      if (!paymentRecord) {
+        return res.status(404).json({ success: false, error: 'Payment not found' });
+      }
+
+      if (paymentRecord.user_id !== req.userId && req.userRole !== 'admin') {
+        return res.status(403).json({ success: false, error: 'Unauthorized' });
+      }
+
+      let verificationResult = {
+        success: paymentRecord.status === 'completed',
+        status: paymentRecord.status,
+        reference: paymentRecord.reference_id || paymentRecord.id,
+        amount: paymentRecord.amount,
+        currency: paymentRecord.currency || 'NGN',
+      };
+
+      if (paymentRecord.payment_method === 'paystack' && paymentRecord.reference_id) {
+        verificationResult = await paystackService.verifyTransaction(paymentRecord.reference_id);
+      } else if (paymentRecord.payment_method === 'flutterwave' && paymentRecord.reference_id) {
+        verificationResult = await flutterwaveService.verifyPayment(paymentRecord.reference_id);
+      }
+
+      res.json({ success: true, data: verificationResult });
     } catch (error) {
       logger.error('Payment verification error:', error);
       res.status(500).json({ success: false, error: error.message });

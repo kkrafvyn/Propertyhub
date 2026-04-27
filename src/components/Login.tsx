@@ -100,7 +100,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onBack, onSignup }) => {
   return (
     <div className="theme-page-shell relative min-h-[100dvh] overflow-x-hidden">
       <div className="theme-page-glow absolute inset-0" />
-      <div className="relative mx-auto flex min-h-[100dvh] max-w-7xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+      <div className="relative mx-auto flex min-h-[100dvh] max-w-7xl flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pb-6 sm:pt-6 lg:px-8 lg:pb-8 lg:pt-8">
         <header className="wire-navbar flex items-center justify-between gap-4 rounded-[30px] px-4 py-3">
           <button
             type="button"

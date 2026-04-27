@@ -277,12 +277,15 @@
 
   body {
     margin: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
     padding: 0;
     background-color: var(--background);
     color: var(--foreground);
     font-family: "Circular Std", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     letter-spacing: -0.01em;
     overflow-x: hidden;
     transition: background-color 0.3s ease, color 0.3s ease;
@@ -990,18 +993,32 @@
   .safe-area-inset {
     padding-top: env(safe-area-inset-top);
     padding-right: env(safe-area-inset-right);
-    padding-bottom: env(safe-area-inset-bottom);
     padding-left: env(safe-area-inset-left);
   }
 
-  .touch-target   { min-height: 44px; min-width: 44px; }
+  .safe-area-pt   { padding-top: env(safe-area-inset-top, 0); }
+  .safe-area-px   {
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
+  }
+
+  .touch-target   {
+    min-height: 48px;
+    min-width: 48px;
+    -webkit-tap-highlight-color: transparent;
+  }
   .touch-manipulation { touch-action: manipulation; }
   .safe-area-pb   { padding-bottom: env(safe-area-inset-bottom, 0); }
+  .mobile-bottom-offset {
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+  }
 
   .mobile-viewport {
     min-height: 100vh;
     min-height: 100dvh;
     height: auto;
+    position: relative;
+    isolation: isolate;
   }
 
   .mobile-headline {
@@ -1303,6 +1320,8 @@
     background: color-mix(in srgb, var(--card) 80%, transparent);
     color: var(--foreground);
     box-shadow: var(--elevation-soft);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
+    backdrop-filter: blur(30px) saturate(150%);
   }
 
   .wire-navbar-subtle {
@@ -1465,12 +1484,143 @@
     border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
   }
 
+  .property-card {
+    position: relative;
+    isolation: isolate;
+    transform-style: preserve-3d;
+    backface-visibility: hidden;
+    transition:
+      transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.3s ease;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.52),
+      0 18px 36px rgba(51, 40, 28, 0.1),
+      0 28px 72px rgba(51, 40, 28, 0.12);
+  }
+
+  .property-card::before {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 16%, transparent 72%, rgba(20, 16, 12, 0.04)),
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 30%);
+    opacity: 0.95;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .property-card::after {
+    content: '';
+    position: absolute;
+    left: 12%;
+    right: 12%;
+    bottom: -20px;
+    height: 26px;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgba(51, 40, 28, 0.22), transparent 72%);
+    filter: blur(14px);
+    opacity: 0.42;
+    pointer-events: none;
+    z-index: -1;
+    transition: opacity 0.45s ease, transform 0.45s ease;
+  }
+
   .property-card:hover {
-    transform: none;
-    box-shadow: var(--elevation-medium);
+    transform: translateY(-8px) rotateX(4deg) rotateY(-3deg);
+    border-color: color-mix(in srgb, var(--primary) 20%, var(--border));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.58),
+      0 24px 42px rgba(51, 40, 28, 0.14),
+      0 38px 84px rgba(51, 40, 28, 0.2);
+  }
+
+  .property-card:hover::after {
+    opacity: 0.56;
+    transform: translateY(3px);
+  }
+
+  .property-card-image {
+    transform-origin: center center;
+    will-change: transform;
   }
 
   .property-card:hover .property-card-image {
-    transform: scale(1.02);
+    transform: scale(1.06);
+  }
+
+  .property-card:hover .property-card-content {
+    transform: translateY(-2px);
+  }
+
+  .property-card-price-panel,
+  .property-card-glass-chip,
+  .property-card-icon-button,
+  .property-card-stat,
+  .property-card-inline-chip {
+    position: relative;
+    z-index: 1;
+  }
+
+  .property-card-price-panel {
+    background: linear-gradient(180deg, rgba(26, 21, 16, 0.16), rgba(26, 21, 16, 0.34));
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      0 14px 28px rgba(15, 12, 10, 0.18);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+
+  .property-card-glass-chip {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+
+  .property-card-icon-button {
+    display: inline-flex;
+    height: 2.75rem;
+    width: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 10px 22px rgba(15, 12, 10, 0.14);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    transition:
+      transform 0.25s ease,
+      background-color 0.25s ease,
+      border-color 0.25s ease;
+  }
+
+  .property-card-icon-button:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+
+  .property-card-stat {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, white), color-mix(in srgb, var(--secondary) 74%, var(--card)));
+    border: 1px solid color-mix(in srgb, var(--border) 96%, transparent);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 10px 24px rgba(51, 40, 28, 0.08);
+  }
+
+  .property-card-inline-chip {
+    background: color-mix(in srgb, var(--secondary) 84%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--border) 94%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
   }
 }

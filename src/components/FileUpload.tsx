@@ -1,25 +1,32 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useCallback, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+  AlertCircle,
+  Camera,
+  Check,
+  Download,
+  File,
+  Image as ImageIcon,
+  Music,
+  Upload,
+  Video,
+  X,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  captureImageFile,
+  isNativePlatform,
+  openExternalUrl,
+} from '../services/nativeCapabilities';
+import { uploadMediaFile } from '../services/mediaUploadService';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
-import { Badge } from './ui/badge';
-import { 
-  Upload, 
-  File, 
-  Image as ImageIcon, 
-  Video, 
-  Music, 
-  X, 
-  Check,
-  AlertCircle,
-  Download
-} from 'lucide-react';
-import { toast } from "sonner";
 
 interface FileUploadProps {
   onFileUpload: (file: File, fileUrl: string, thumbnailUrl?: string) => void;
   accept?: string;
-  maxSize?: number; // in MB
+  maxSize?: number;
   maxFiles?: number;
   disabled?: boolean;
   className?: string;
@@ -36,270 +43,286 @@ interface UploadingFile {
 
 const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const SUPPORTED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/ogg'];
-const SUPPORTED_AUDIO_TYPES = ['audio/mp3', 'audio/wav', 'audio/ogg', 'audio/m4a'];
+const SUPPORTED_AUDIO_TYPES = ['audio/mp3', 'audio/wav', 'audio/ogg', 'audio/m4a', 'audio/mpeg'];
 
-export function FileUpload({ 
-  onFileUpload, 
+const formatFileSize = (bytes: number) => {
+  if (bytes === 0) return '0 Bytes';
+  const unitBase = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const unitIndex = Math.floor(Math.log(bytes) / Math.log(unitBase));
+  return `${parseFloat((bytes / unitBase ** unitIndex).toFixed(2))} ${sizes[unitIndex]}`;
+};
+
+const getFileIcon = (file: File) => {
+  if (SUPPORTED_IMAGE_TYPES.includes(file.type)) {
+    return <ImageIcon className="w-6 h-6 text-blue-500" />;
+  }
+
+  if (SUPPORTED_VIDEO_TYPES.includes(file.type)) {
+    return <Video className="w-6 h-6 text-purple-500" />;
+  }
+
+  if (SUPPORTED_AUDIO_TYPES.includes(file.type)) {
+    return <Music className="w-6 h-6 text-green-500" />;
+  }
+
+  return <File className="w-6 h-6 text-gray-500" />;
+};
+
+const generateThumbnail = (file: File): Promise<string | undefined> =>
+  new Promise((resolve) => {
+    if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
+      resolve(undefined);
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    const image = new Image();
+
+    image.onload = () => {
+      const maxDimension = 200;
+      let { width, height } = image;
+
+      if (width > height && width > maxDimension) {
+        height = (height * maxDimension) / width;
+        width = maxDimension;
+      } else if (height >= width && height > maxDimension) {
+        width = (width * maxDimension) / height;
+        height = maxDimension;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      context?.drawImage(image, 0, 0, width, height);
+      URL.revokeObjectURL(previewUrl);
+      resolve(canvas.toDataURL('image/jpeg', 0.72));
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(previewUrl);
+      resolve(undefined);
+    };
+
+    image.src = previewUrl;
+  });
+
+export function FileUpload({
+  onFileUpload,
   accept = 'image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar',
-  maxSize = 50, // 50MB default
+  maxSize = 50,
   maxFiles = 5,
   disabled = false,
-  className = ''
+  className = '',
 }: FileUploadProps) {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const getFileIcon = (file: File) => {
-    if (SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-      return <ImageIcon className="w-6 h-6 text-blue-500" />;
-    } else if (SUPPORTED_VIDEO_TYPES.includes(file.type)) {
-      return <Video className="w-6 h-6 text-purple-500" />;
-    } else if (SUPPORTED_AUDIO_TYPES.includes(file.type)) {
-      return <Music className="w-6 h-6 text-green-500" />;
-    }
-    return <File className="w-6 h-6 text-gray-500" />;
-  };
+  const validateFile = useCallback(
+    (file: File): string | null => {
+      const maxSizeBytes = maxSize * 1024 * 1024;
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+      if (file.size > maxSizeBytes) {
+        return `File size must be less than ${maxSize}MB`;
+      }
 
-  const validateFile = (file: File): string | null => {
-    // Check file size
-    const maxSizeBytes = maxSize * 1024 * 1024;
-    if (file.size > maxSizeBytes) {
-      return `File size must be less than ${maxSize}MB`;
-    }
+      if (uploadingFiles.length >= maxFiles) {
+        return `Maximum ${maxFiles} files allowed`;
+      }
 
-    // Check if we're at max files
-    if (uploadingFiles.length >= maxFiles) {
-      return `Maximum ${maxFiles} files allowed`;
-    }
+      return null;
+    },
+    [maxFiles, maxSize, uploadingFiles.length]
+  );
 
-    return null;
-  };
+  const updateUploadState = useCallback((file: File, updates: Partial<UploadingFile>) => {
+    setUploadingFiles((previous) =>
+      previous.map((entry) => (entry.file === file ? { ...entry, ...updates } : entry))
+    );
+  }, []);
 
-  const generateThumbnail = (file: File): Promise<string | undefined> => {
-    return new Promise((resolve) => {
-      if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-        resolve(undefined);
+  const performUpload = useCallback(
+    async (file: File) => {
+      const thumbnailUrl = await generateThumbnail(file);
+      const progressInterval = window.setInterval(() => {
+        setUploadingFiles((previous) =>
+          previous.map((entry) => {
+            if (entry.file !== file || entry.status !== 'uploading') {
+              return entry;
+            }
+
+            return {
+              ...entry,
+              progress: Math.min(entry.progress + 14, 85),
+            };
+          })
+        );
+      }, 180);
+
+      try {
+        const uploadedAsset = await uploadMediaFile(file);
+        window.clearInterval(progressInterval);
+
+        updateUploadState(file, {
+          status: 'completed',
+          progress: 100,
+          url: uploadedAsset.url,
+          thumbnailUrl: thumbnailUrl || uploadedAsset.thumbnailUrl,
+        });
+
+        onFileUpload(file, uploadedAsset.url, thumbnailUrl || uploadedAsset.thumbnailUrl);
+        toast.success(`${file.name} uploaded successfully`);
+      } catch (error) {
+        window.clearInterval(progressInterval);
+        const message = error instanceof Error ? error.message : 'Upload failed';
+
+        updateUploadState(file, {
+          status: 'error',
+          error: message,
+        });
+
+        toast.error(`Failed to upload ${file.name}`);
+      }
+    },
+    [onFileUpload, updateUploadState]
+  );
+
+  const enqueueFiles = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        const validationError = validateFile(file);
+
+        if (validationError) {
+          toast.error(validationError);
+          continue;
+        }
+
+        setUploadingFiles((previous) => [
+          ...previous,
+          {
+            file,
+            progress: 8,
+            status: 'uploading',
+          },
+        ]);
+
+        await performUpload(file);
+      }
+    },
+    [performUpload, validateFile]
+  );
+
+  const handleFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const selectedFiles = Array.from(files);
+      if (selectedFiles.length === 0) {
         return;
       }
 
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
+      await enqueueFiles(selectedFiles);
+    },
+    [enqueueFiles]
+  );
 
-      img.onload = () => {
-        // Calculate thumbnail dimensions (max 200x200)
-        const maxSize = 200;
-        let { width, height } = img;
-        
-        if (width > height) {
-          if (width > maxSize) {
-            height = (height * maxSize) / width;
-            width = maxSize;
-          }
-        } else {
-          if (height > maxSize) {
-            width = (width * maxSize) / height;
-            height = maxSize;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        
-        ctx?.drawImage(img, 0, 0, width, height);
-        const thumbnailUrl = canvas.toDataURL('image/jpeg', 0.7);
-        resolve(thumbnailUrl);
-      };
-
-      img.onerror = () => resolve(undefined);
-      img.src = URL.createObjectURL(file);
-    });
-  };
-
-  const simulateUpload = async (file: File): Promise<{ url: string; thumbnailUrl?: string }> => {
-    // Simulate file upload progress
-    const fileId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Generate thumbnail for images
-    const thumbnailUrl = await generateThumbnail(file);
-    
-    // Simulate upload progress
-    return new Promise((resolve, reject) => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.random() * 30;
-        if (progress >= 100) {
-          progress = 100;
-          clearInterval(interval);
-          
-          // Simulate successful upload
-          setTimeout(() => {
-            const fileUrl = URL.createObjectURL(file);
-            resolve({ url: fileUrl, thumbnailUrl });
-          }, 500);
-        }
-        
-        setUploadingFiles(prev => 
-          prev.map(f => 
-            f.file === file ? { ...f, progress } : f
-          )
-        );
-      }, 200);
-
-      // Simulate occasional errors (5% chance)
-      if (Math.random() < 0.05) {
-        setTimeout(() => {
-          clearInterval(interval);
-          reject(new Error('Upload failed'));
-        }, 2000);
-      }
-    });
-  };
-
-  const handleFiles = useCallback(async (files: FileList) => {
-    const fileArray = Array.from(files);
-    
-    for (const file of fileArray) {
-      const error = validateFile(file);
-      if (error) {
-        toast.error(error);
-        continue;
-      }
-
-      // Add file to uploading list
-      const uploadingFile: UploadingFile = {
-        file,
-        progress: 0,
-        status: 'uploading'
-      };
-
-      setUploadingFiles(prev => [...prev, uploadingFile]);
-
+  const handleNativeCapture = useCallback(
+    async (source: 'camera' | 'photos') => {
       try {
-        const { url, thumbnailUrl } = await simulateUpload(file);
-        
-        setUploadingFiles(prev => 
-          prev.map(f => 
-            f.file === file 
-              ? { ...f, status: 'completed', progress: 100, url, thumbnailUrl }
-              : f
-          )
-        );
+        const capturedFile = await captureImageFile(source, {
+          quality: 88,
+          allowEditing: false,
+        });
 
-        // Call parent callback
-        onFileUpload(file, url, thumbnailUrl);
-        toast.success(`${file.name} uploaded successfully`);
-
+        await enqueueFiles([capturedFile]);
       } catch (error) {
-        setUploadingFiles(prev => 
-          prev.map(f => 
-            f.file === file 
-              ? { ...f, status: 'error', error: 'Upload failed' }
-              : f
-          )
-        );
-        toast.error(`Failed to upload ${file.name}`);
+        if (error instanceof Error && /cancel/i.test(error.message)) {
+          return;
+        }
+
+        toast.error('Unable to access the camera right now.');
       }
-    }
-  }, [onFileUpload, maxSize, maxFiles, uploadingFiles.length]);
+    },
+    [enqueueFiles]
+  );
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!disabled) {
-      setIsDragOver(true);
-    }
-  }, [disabled]);
+  const handleDragOver = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+      if (!disabled) {
+        setIsDragOver(true);
+      }
+    },
+    [disabled]
+  );
+
+  const handleDragLeave = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
     setIsDragOver(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-    
-    if (disabled) return;
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsDragOver(false);
 
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFiles(files);
-    }
-  }, [disabled, handleFiles]);
+      if (disabled) {
+        return;
+      }
 
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleFiles(files);
-    }
-    // Reset input value
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  }, [handleFiles]);
+      void handleFiles(event.dataTransfer.files);
+    },
+    [disabled, handleFiles]
+  );
 
-  const removeFile = (file: File) => {
-    setUploadingFiles(prev => prev.filter(f => f.file !== file));
-  };
+  const handleFileInput = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files;
+      if (files && files.length > 0) {
+        void handleFiles(files);
+      }
 
-  const retryUpload = async (file: File) => {
-    setUploadingFiles(prev => 
-      prev.map(f => 
-        f.file === file 
-          ? { ...f, status: 'uploading', progress: 0, error: undefined }
-          : f
-      )
-    );
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    },
+    [handleFiles]
+  );
 
-    try {
-      const { url, thumbnailUrl } = await simulateUpload(file);
-      
-      setUploadingFiles(prev => 
-        prev.map(f => 
-          f.file === file 
-            ? { ...f, status: 'completed', progress: 100, url, thumbnailUrl }
-            : f
-        )
-      );
+  const removeFile = useCallback((file: File) => {
+    setUploadingFiles((previous) => previous.filter((entry) => entry.file !== file));
+  }, []);
 
-      onFileUpload(file, url, thumbnailUrl);
-      toast.success(`${file.name} uploaded successfully`);
+  const retryUpload = useCallback(
+    async (file: File) => {
+      updateUploadState(file, {
+        status: 'uploading',
+        progress: 8,
+        error: undefined,
+      });
 
-    } catch (error) {
-      setUploadingFiles(prev => 
-        prev.map(f => 
-          f.file === file 
-            ? { ...f, status: 'error', error: 'Upload failed' }
-            : f
-        )
-      );
-      toast.error(`Failed to upload ${file.name}`);
-    }
-  };
+      await performUpload(file);
+    },
+    [performUpload, updateUploadState]
+  );
+
+  const nativeDevice = isNativePlatform();
 
   return (
     <div className={`space-y-4 ${className}`}>
-      {/* Drop Zone */}
       <motion.div
         className={`
-          relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300
-          ${isDragOver && !disabled 
-            ? 'border-primary bg-primary/5 scale-[1.02]' 
-            : 'border-border hover:border-primary/50'
+          relative rounded-xl border-2 border-dashed p-8 text-center transition-all duration-300
+          ${
+            isDragOver && !disabled
+              ? 'border-primary bg-primary/5 scale-[1.02]'
+              : 'border-border hover:border-primary/50'
           }
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+          ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
         `}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -320,20 +343,20 @@ export function FileUpload({
 
         <motion.div
           initial={{ scale: 1 }}
-          animate={{ scale: isDragOver ? 1.1 : 1 }}
-          transition={{ type: "spring", stiffness: 300 }}
+          animate={{ scale: isDragOver ? 1.08 : 1 }}
+          transition={{ type: 'spring', stiffness: 300 }}
         >
-          <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <Upload className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
         </motion.div>
 
-        <h3 className="text-lg font-medium mb-2">
+        <h3 className="mb-2 text-lg font-medium">
           {isDragOver ? 'Drop files here' : 'Upload files'}
         </h3>
-        <p className="text-muted-foreground mb-4">
-          Drag & drop files here, or click to browse
+        <p className="mb-4 text-muted-foreground">
+          Drag and drop files here, or tap to browse your device
         </p>
-        
-        <div className="flex flex-wrap justify-center gap-2 mb-4">
+
+        <div className="mb-4 flex flex-wrap justify-center gap-2">
           <Badge variant="secondary">Images</Badge>
           <Badge variant="secondary">Videos</Badge>
           <Badge variant="secondary">Audio</Badge>
@@ -345,97 +368,127 @@ export function FileUpload({
         </p>
       </motion.div>
 
-      {/* Upload Progress */}
+      {nativeDevice ? (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            disabled={disabled}
+            onClick={() => {
+              void handleNativeCapture('camera');
+            }}
+          >
+            <Camera className="mr-2 h-4 w-4" />
+            Take Photo
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            disabled={disabled}
+            onClick={() => {
+              void handleNativeCapture('photos');
+            }}
+          >
+            <ImageIcon className="mr-2 h-4 w-4" />
+            Photo Library
+          </Button>
+        </div>
+      ) : null}
+
       <AnimatePresence>
-        {uploadingFiles.length > 0 && (
+        {uploadingFiles.length > 0 ? (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             className="space-y-3"
           >
-            {uploadingFiles.map((uploadingFile, index) => (
+            {uploadingFiles.map((uploadingFile) => (
               <motion.div
-                key={index}
+                key={`${uploadingFile.file.name}-${uploadingFile.file.size}-${uploadingFile.file.lastModified}`}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
-                className="bg-card border rounded-lg p-4"
+                className="rounded-lg border bg-card p-4"
               >
                 <div className="flex items-center gap-3">
                   {getFileIcon(uploadingFile.file)}
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <h4 className="font-medium truncate">
-                        {uploadingFile.file.name}
-                      </h4>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center justify-between">
+                      <h4 className="truncate font-medium">{uploadingFile.file.name}</h4>
                       <div className="flex items-center gap-2">
-                        {uploadingFile.status === 'completed' && (
-                          <Check className="w-4 h-4 text-green-500" />
-                        )}
-                        {uploadingFile.status === 'error' && (
-                          <AlertCircle className="w-4 h-4 text-red-500" />
-                        )}
+                        {uploadingFile.status === 'completed' ? (
+                          <Check className="h-4 w-4 text-green-500" />
+                        ) : null}
+                        {uploadingFile.status === 'error' ? (
+                          <AlertCircle className="h-4 w-4 text-red-500" />
+                        ) : null}
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => removeFile(uploadingFile.file)}
-                          className="w-6 h-6 p-0"
+                          className="h-6 w-6 p-0"
                         >
-                          <X className="w-3 h-3" />
+                          <X className="h-3 w-3" />
                         </Button>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between text-sm text-muted-foreground mb-2">
+
+                    <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
                       <span>{formatFileSize(uploadingFile.file.size)}</span>
-                      {uploadingFile.status === 'error' && (
+                      {uploadingFile.status === 'error' ? (
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => retryUpload(uploadingFile.file)}
+                          onClick={() => {
+                            void retryUpload(uploadingFile.file);
+                          }}
                           className="h-6 text-xs"
                         >
                           Retry
                         </Button>
-                      )}
+                      ) : null}
                     </div>
 
-                    {uploadingFile.status === 'uploading' && (
+                    {uploadingFile.status === 'uploading' ? (
                       <Progress value={uploadingFile.progress} className="h-2" />
-                    )}
+                    ) : null}
 
-                    {uploadingFile.status === 'error' && uploadingFile.error && (
+                    {uploadingFile.status === 'error' && uploadingFile.error ? (
                       <p className="text-sm text-red-500">{uploadingFile.error}</p>
-                    )}
+                    ) : null}
 
-                    {uploadingFile.status === 'completed' && uploadingFile.url && (
-                      <div className="flex items-center gap-2 mt-2">
+                    {uploadingFile.status === 'completed' && uploadingFile.url ? (
+                      <div className="mt-2 flex items-center gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => window.open(uploadingFile.url, '_blank')}
+                          onClick={() => {
+                            void openExternalUrl(uploadingFile.url!);
+                          }}
                           className="h-6 text-xs"
                         >
-                          <Download className="w-3 h-3 mr-1" />
+                          <Download className="mr-1 h-3 w-3" />
                           Preview
                         </Button>
-                        {uploadingFile.thumbnailUrl && (
-                          <img 
-                            src={uploadingFile.thumbnailUrl} 
+                        {uploadingFile.thumbnailUrl ? (
+                          <img
+                            src={uploadingFile.thumbnailUrl}
                             alt="Thumbnail"
-                            className="w-8 h-8 rounded object-cover"
+                            className="h-8 w-8 rounded object-cover"
                           />
-                        )}
+                        ) : null}
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </motion.div>
             ))}
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
     </div>
   );

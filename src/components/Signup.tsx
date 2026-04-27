@@ -1,6 +1,12 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ArrowLeft, Building2, CheckCircle2, Home, Sparkles, UserCircle2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Home,
+  Sparkles,
+  UserCircle2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as AppUser, UserRole } from '../types';
 import { authService } from '../services/supabaseApi';
@@ -23,21 +29,15 @@ const roleOptions: Array<{
 }> = [
   {
     value: 'user',
-    label: 'Property seeker',
-    description: 'Browse, save, and coordinate your next move.',
+    label: 'User',
+    description: 'Search homes, rent, buy, lease, and track your property journey.',
     icon: UserCircle2,
   },
   {
     value: 'host',
-    label: 'Property owner',
-    description: 'List homes and manage interest from one place.',
+    label: 'Landlord',
+    description: 'List properties for rent, sale, or lease and manage offers cleanly.',
     icon: Home,
-  },
-  {
-    value: 'manager',
-    label: 'Property manager',
-    description: 'Oversee availability, replies, and operations.',
-    icon: Building2,
   },
 ];
 
@@ -94,7 +94,7 @@ export const Signup: React.FC<SignupProps> = ({ onSignup, onBack, onLogin }) => 
   return (
     <div className="theme-page-shell relative min-h-[100dvh] overflow-x-hidden">
       <div className="theme-page-glow absolute inset-0" />
-      <div className="relative mx-auto flex min-h-[100dvh] max-w-7xl flex-col px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+      <div className="relative mx-auto flex min-h-[100dvh] max-w-7xl flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pb-6 sm:pt-6 lg:px-8 lg:pb-8 lg:pt-8">
         <header className="wire-navbar flex items-center justify-between gap-4 rounded-[30px] px-4 py-3">
           <button
             type="button"
@@ -233,7 +233,7 @@ export const Signup: React.FC<SignupProps> = ({ onSignup, onBack, onLogin }) => 
 
                 <div className="space-y-3">
                   <span className="text-sm font-medium">Account type</span>
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
                     {roleOptions.map((option) => {
                       const Icon = option.icon;
                       const isActive = formData.role === option.value;

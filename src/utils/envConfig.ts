@@ -1,9 +1,4 @@
-/**
- * Environment Configuration Utility
- * 
- * Provides browser-safe access to environment variables
- * across different build tools (Vite, Webpack, etc.)
- */
+import { getSupabaseFunctionUrl } from '../services/supabaseProject';
 
 export interface EnvironmentConfig {
   WEBSOCKET_URL: string;
@@ -11,139 +6,166 @@ export interface EnvironmentConfig {
   VAPID_PUBLIC_KEY: string;
   PAYSTACK_PUBLIC_KEY: string;
   PAYMENT_WEBHOOK_URL: string;
+  MONITORING_ENDPOINT: string;
   NODE_ENV: string;
   isDevelopment: boolean;
   isProduction: boolean;
+  isLocalHost: boolean;
 }
 
-/**
- * Get environment variable with fallbacks for different build systems
- */
-function getEnvVar(key: string, fallback: string = ''): string {
-  // Try Vite environment variables (VITE_*)
+const readRawEnv = (key: string): string => {
   if (typeof import.meta !== 'undefined' && import.meta.env) {
-    const viteKey = `VITE_${key}`;
-    if (import.meta.env[viteKey]) {
-      return import.meta.env[viteKey] as string;
+    const viteValue = import.meta.env[`VITE_${key}`];
+    if (typeof viteValue === 'string') {
+      return viteValue.trim();
     }
   }
 
-  // Try React/CRA environment variables (REACT_APP_*)
   if (typeof process !== 'undefined' && process.env) {
-    const reactKey = `REACT_APP_${key}`;
-    if (process.env[reactKey]) {
-      return process.env[reactKey] as string;
+    const reactValue = process.env[`REACT_APP_${key}`];
+    if (typeof reactValue === 'string') {
+      return reactValue.trim();
     }
   }
 
-  // Try window environment variables (injected at build time)
   if (typeof window !== 'undefined' && (window as any).__ENV__) {
-    const windowEnv = (window as any).__ENV__[key];
-    if (windowEnv) {
-      return windowEnv;
+    const windowValue = (window as any).__ENV__[key];
+    if (typeof windowValue === 'string') {
+      return windowValue.trim();
     }
   }
 
-  // Try runtime environment detection
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    const protocol = window.location.protocol;
-    
-    // Auto-detect websocket URL based on current host
-    if (key === 'WEBSOCKET_URL') {
-      if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return 'ws://localhost:8080';
-      } else {
-        const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${wsProtocol}//${hostname}/ws`;
-      }
-    }
+  return '';
+};
 
-    // Auto-detect API URL
-    if (key === 'API_URL') {
-      if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return 'http://localhost:8080';
-      } else {
-        return `${protocol}//${hostname}/api`;
-      }
-    }
-  }
+const isPlaceholderValue = (value: string): boolean =>
+  value.length === 0 ||
+  value.includes('your-') ||
+  value.includes('placeholder') ||
+  value.includes('example.com') ||
+  value === 'pk_test_demo_key_for_development' ||
+  value === 'pk_test_demo';
 
-  return fallback;
-}
-
-/**
- * Get current environment
- */
-function getEnvironment(): 'development' | 'production' | 'test' {
-  // Try Vite
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
-    const mode = import.meta.env.MODE;
+const getEnvironment = (): 'development' | 'production' | 'test' => {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.MODE) {
+    const mode = String(import.meta.env.MODE).toLowerCase();
     if (mode === 'production') return 'production';
     if (mode === 'test') return 'test';
     return 'development';
   }
 
-  // Try Node.js
-  if (typeof process !== 'undefined' && process.env) {
-    const nodeEnv = process.env.NODE_ENV;
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
+    const nodeEnv = String(process.env.NODE_ENV).toLowerCase();
     if (nodeEnv === 'production') return 'production';
     if (nodeEnv === 'test') return 'test';
     return 'development';
   }
 
-  // Try window
   if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'development';
-    }
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'development'
+      : 'production';
   }
 
   return 'production';
-}
-
-/**
- * Export environment configuration
- */
-export const envConfig: EnvironmentConfig = {
-  WEBSOCKET_URL: getEnvVar('WEBSOCKET_URL', 'ws://localhost:8080'),
-  API_URL: getEnvVar('API_URL', 'http://localhost:8080'),
-  VAPID_PUBLIC_KEY: getEnvVar('VAPID_PUBLIC_KEY', ''),
-  PAYSTACK_PUBLIC_KEY: getEnvVar('PAYSTACK_PUBLIC_KEY', 'pk_test_demo_key_for_development'),
-  PAYMENT_WEBHOOK_URL: getEnvVar('PAYMENT_WEBHOOK_URL', 'http://localhost:8080/webhooks/paystack'),
-  NODE_ENV: getEnvironment(),
-  isDevelopment: getEnvironment() === 'development',
-  isProduction: getEnvironment() === 'production'
 };
 
-/**
- * Helper function to safely get environment variables
- */
+const NODE_ENV = getEnvironment();
+const isDevelopment = NODE_ENV === 'development';
+const isProduction = NODE_ENV === 'production';
+const isLocalHost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const supabaseFunctionUrl = getSupabaseFunctionUrl();
+
+const resolveApiUrl = (): string => {
+  const configured = readRawEnv('API_URL');
+  if (!isPlaceholderValue(configured)) {
+    return configured.replace(/\/$/, '');
+  }
+
+  if (supabaseFunctionUrl) {
+    return supabaseFunctionUrl.replace(/\/$/, '');
+  }
+
+  if (isLocalHost) {
+    return 'http://localhost:8080';
+  }
+
+  return '';
+};
+
+const resolveWebSocketUrl = (): string => {
+  const configured = readRawEnv('WEBSOCKET_URL');
+  if (!isPlaceholderValue(configured)) {
+    return configured.replace(/\/$/, '');
+  }
+
+  const apiUrl = resolveApiUrl();
+  if (apiUrl) {
+    return apiUrl.replace(/^http/i, 'ws').replace(/\/$/, '');
+  }
+
+  if (isLocalHost) {
+    return 'ws://localhost:8080';
+  }
+
+  return '';
+};
+
+const resolvePaymentWebhookUrl = (): string => {
+  const configured = readRawEnv('PAYMENT_WEBHOOK_URL');
+  if (!isPlaceholderValue(configured)) {
+    return configured.replace(/\/$/, '');
+  }
+
+  if (isLocalHost) {
+    return 'http://localhost:8080/webhooks/paystack';
+  }
+
+  return '';
+};
+
+export const envConfig: EnvironmentConfig = {
+  WEBSOCKET_URL: resolveWebSocketUrl(),
+  API_URL: resolveApiUrl(),
+  VAPID_PUBLIC_KEY: readRawEnv('VAPID_PUBLIC_KEY'),
+  PAYSTACK_PUBLIC_KEY: isPlaceholderValue(readRawEnv('PAYSTACK_PUBLIC_KEY'))
+    ? ''
+    : readRawEnv('PAYSTACK_PUBLIC_KEY'),
+  PAYMENT_WEBHOOK_URL: resolvePaymentWebhookUrl(),
+  MONITORING_ENDPOINT: isPlaceholderValue(readRawEnv('MONITORING_ENDPOINT'))
+    ? ''
+    : readRawEnv('MONITORING_ENDPOINT'),
+  NODE_ENV,
+  isDevelopment,
+  isProduction,
+  isLocalHost,
+};
+
 export function getEnv(key: keyof EnvironmentConfig): string | boolean {
   return envConfig[key];
 }
 
-/**
- * Debug environment configuration (development only)
- */
-if (envConfig.isDevelopment && typeof console !== 'undefined') {
-  const isDemoMode = envConfig.PAYSTACK_PUBLIC_KEY === 'pk_test_demo_key_for_development';
-  
-  console.log('🔧 Environment Configuration:', {
+if (typeof console !== 'undefined' && isDevelopment) {
+  console.log('Environment configuration', {
     NODE_ENV: envConfig.NODE_ENV,
-    API_URL: envConfig.API_URL,
-    WEBSOCKET_URL: envConfig.WEBSOCKET_URL,
-    PAYMENT_WEBHOOK_URL: envConfig.PAYMENT_WEBHOOK_URL,
-    VAPID_PUBLIC_KEY: envConfig.VAPID_PUBLIC_KEY ? '[SET]' : '[NOT SET]',
-    PAYSTACK_PUBLIC_KEY: isDemoMode ? '[DEMO MODE]' : '[SET]',
-    isDevelopment: envConfig.isDevelopment,
-    isProduction: envConfig.isProduction
+    API_URL: envConfig.API_URL || '[missing]',
+    WEBSOCKET_URL: envConfig.WEBSOCKET_URL || '[missing]',
+    PAYMENT_WEBHOOK_URL: envConfig.PAYMENT_WEBHOOK_URL || '[missing]',
+    VAPID_PUBLIC_KEY: envConfig.VAPID_PUBLIC_KEY ? '[set]' : '[missing]',
+    PAYSTACK_PUBLIC_KEY: envConfig.PAYSTACK_PUBLIC_KEY ? '[set]' : '[missing]',
+    MONITORING_ENDPOINT: envConfig.MONITORING_ENDPOINT || '[missing]',
   });
-  
-  if (isDemoMode) {
-    console.info('ℹ️ Payment system running in demo mode. Payments will be simulated.');
-    console.info('💡 To use real payments, keep only the public key in the client and configure gateway secrets on the backend.');
+}
+
+if (typeof console !== 'undefined' && isProduction) {
+  if (!envConfig.API_URL) {
+    console.error('VITE_API_URL is required in production.');
+  }
+
+  if (!envConfig.PAYSTACK_PUBLIC_KEY) {
+    console.error('VITE_PAYSTACK_PUBLIC_KEY is required in production.');
   }
 }
 

@@ -1,5 +1,6 @@
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
+import { backendApiRequest } from './backendApi';
 import type { 
   UserDB, 
   PropertyDB, 
@@ -7,16 +8,24 @@ import type {
   ReviewDB, 
   MessageDB,
   PaymentDB,
-  NotificationDB 
+  NotificationDB,
+  FavoriteDB,
+  SearchHistoryDB,
+  SavedSearchDB,
+  PropertyAlertDB,
 } from '../types/database';
+import { envConfig } from '../utils/envConfig';
 import {
   buildAuthAvatar,
   buildAuthDisplayName,
   buildAuthRole,
   defaultAuthPreferences,
 } from '../utils/authUser';
+import { normalizeUserRole } from '../utils/roleCapabilities';
 
 export type OAuthProvider = 'google' | 'apple';
+
+const hasBackendApi = (): boolean => Boolean(envConfig.API_URL);
 
 /**
  * Authentication Service
@@ -211,11 +220,13 @@ export const authService = {
         email: profileOverrides?.email || authUser.email || existingProfile?.email || '',
         name: profileOverrides?.name || existingProfile?.name || buildAuthDisplayName(authUser),
         role:
-          profileOverrides?.role ||
-          existingProfile?.role ||
-          preferredRole ||
-          buildAuthRole(authUser) ||
-          'user',
+          normalizeUserRole(
+            profileOverrides?.role ||
+              existingProfile?.role ||
+              preferredRole ||
+              buildAuthRole(authUser) ||
+              'user'
+          ),
         status: profileOverrides?.status || existingProfile?.status || 'active',
         avatar: profileOverrides?.avatar || buildAuthAvatar(authUser) || existingProfile?.avatar,
         bio: profileOverrides?.bio || existingProfile?.bio,
@@ -327,6 +338,428 @@ export const userService = {
 };
 
 /**
+ * Favorites / saved homes service
+ */
+export const favoriteService = {
+  async getUserFavorites(userId: string) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<FavoriteDB[]>(`/api/v1/favorites/${encodeURIComponent(userId)}`);
+        return { data: data || [], error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('favorites')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return { data: (data || []) as FavoriteDB[], error: null };
+    } catch (error) {
+      return { data: [] as FavoriteDB[], error };
+    }
+  },
+
+  async addFavorite(userId: string, propertyId: string, note?: string) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<FavoriteDB>('/api/v1/favorites', {
+          method: 'POST',
+          body: JSON.stringify({
+            userId,
+            propertyId,
+            note,
+          }),
+        });
+        return { data, error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('favorites')
+        .upsert(
+          {
+            user_id: userId,
+            property_id: propertyId,
+            note,
+            created_at: new Date().toISOString(),
+          },
+          {
+            onConflict: 'user_id,property_id',
+          }
+        )
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data: data as FavoriteDB, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async removeFavorite(userId: string, propertyId: string) {
+    try {
+      if (hasBackendApi()) {
+        await backendApiRequest(`/api/v1/favorites/${encodeURIComponent(propertyId)}`, {
+          method: 'DELETE',
+          body: JSON.stringify({ userId }),
+        });
+        return { error: null };
+      }
+
+      const { error } = await supabase
+        .from('favorites')
+        .delete()
+        .eq('user_id', userId)
+        .eq('property_id', propertyId);
+
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
+  },
+};
+
+/**
+ * Search persistence service
+ */
+export const searchService = {
+  async getSearchHistory(userId: string, limit: number = 10) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<SearchHistoryDB[]>(
+          `/api/v1/search/history/${encodeURIComponent(userId)}?limit=${encodeURIComponent(String(limit))}`
+        );
+        return { data: data || [], error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('search_history')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      return { data: (data || []) as SearchHistoryDB[], error: null };
+    } catch (error) {
+      return { data: [] as SearchHistoryDB[], error };
+    }
+  },
+
+  async recordSearchHistory(
+    userId: string,
+    payload: {
+      query: string;
+      filters?: Record<string, any>;
+      resultsCount?: number;
+      clickedPropertyId?: string;
+    }
+  ) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<SearchHistoryDB>('/api/v1/search/history', {
+          method: 'POST',
+          body: JSON.stringify({
+            userId,
+            query: payload.query,
+            filters: payload.filters || {},
+            resultsCount: payload.resultsCount,
+            clickedPropertyId: payload.clickedPropertyId,
+          }),
+        });
+        return { data, error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('search_history')
+        .insert({
+          user_id: userId,
+          query: payload.query,
+          filters: payload.filters || {},
+          results_count: payload.resultsCount,
+          clicked_property_id: payload.clickedPropertyId,
+          created_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data: data as SearchHistoryDB, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async clearSearchHistory(userId: string) {
+    try {
+      if (hasBackendApi()) {
+        await backendApiRequest(`/api/v1/search/history/${encodeURIComponent(userId)}`, {
+          method: 'DELETE',
+        });
+        return { error: null };
+      }
+
+      const { error } = await supabase.from('search_history').delete().eq('user_id', userId);
+
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
+  },
+
+  async getSavedSearches(userId: string) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<SavedSearchDB[]>(
+          `/api/v1/search/saved/${encodeURIComponent(userId)}`
+        );
+        return { data: data || [], error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('saved_searches')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      return { data: (data || []) as SavedSearchDB[], error: null };
+    } catch (error) {
+      return { data: [] as SavedSearchDB[], error };
+    }
+  },
+
+  async createSavedSearch(
+    userId: string,
+    payload: {
+      name: string;
+      searchTerm?: string;
+      filters?: Record<string, any>;
+      resultsCount?: number;
+      alertEnabled?: boolean;
+      alertFrequency?: 'instant' | 'daily' | 'weekly';
+    }
+  ) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<SavedSearchDB>('/api/v1/search/saved', {
+          method: 'POST',
+          body: JSON.stringify({
+            userId,
+            name: payload.name,
+            searchTerm: payload.searchTerm,
+            filters: payload.filters || {},
+            resultsCount: payload.resultsCount || 0,
+            alertEnabled: payload.alertEnabled || false,
+            alertFrequency: payload.alertFrequency || 'daily',
+          }),
+        });
+        return { data, error: null };
+      }
+
+      const timestamp = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('saved_searches')
+        .insert({
+          user_id: userId,
+          name: payload.name,
+          search_term: payload.searchTerm,
+          filters: payload.filters || {},
+          results_count: payload.resultsCount || 0,
+          alert_enabled: payload.alertEnabled || false,
+          alert_frequency: payload.alertFrequency || 'daily',
+          created_at: timestamp,
+          updated_at: timestamp,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data: data as SavedSearchDB, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async deleteSavedSearch(savedSearchId: string) {
+    try {
+      if (hasBackendApi()) {
+        await backendApiRequest(`/api/v1/search/saved/${encodeURIComponent(savedSearchId)}`, {
+          method: 'DELETE',
+        });
+        return { error: null };
+      }
+
+      const { error } = await supabase.from('saved_searches').delete().eq('id', savedSearchId);
+
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
+  },
+
+  async updateSavedSearch(savedSearchId: string, updates: Partial<SavedSearchDB>) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<SavedSearchDB>(
+          `/api/v1/search/saved/${encodeURIComponent(savedSearchId)}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify(updates),
+          }
+        );
+        return { data, error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('saved_searches')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', savedSearchId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data: data as SavedSearchDB, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async getPropertyAlerts(userId: string) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<PropertyAlertDB[]>(
+          `/api/v1/search/alerts/${encodeURIComponent(userId)}`
+        );
+        return { data: data || [], error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('property_alerts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      return { data: (data || []) as PropertyAlertDB[], error: null };
+    } catch (error) {
+      return { data: [] as PropertyAlertDB[], error };
+    }
+  },
+
+  async createPropertyAlert(
+    userId: string,
+    payload: {
+      name: string;
+      criteria?: Record<string, any>;
+      frequency?: 'instant' | 'daily' | 'weekly';
+      enabled?: boolean;
+      matchCount?: number;
+      email?: string;
+      pushNotifications?: boolean;
+    }
+  ) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<PropertyAlertDB>('/api/v1/search/alerts', {
+          method: 'POST',
+          body: JSON.stringify({
+            userId,
+            name: payload.name,
+            criteria: payload.criteria || {},
+            frequency: payload.frequency || 'daily',
+            enabled: payload.enabled ?? true,
+            matchCount: payload.matchCount || 0,
+            email: payload.email,
+            pushNotifications: payload.pushNotifications ?? true,
+          }),
+        });
+        return { data, error: null };
+      }
+
+      const timestamp = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('property_alerts')
+        .insert({
+          user_id: userId,
+          name: payload.name,
+          criteria: payload.criteria || {},
+          frequency: payload.frequency || 'daily',
+          enabled: payload.enabled ?? true,
+          match_count: payload.matchCount || 0,
+          email: payload.email,
+          push_notifications: payload.pushNotifications ?? true,
+          created_at: timestamp,
+          updated_at: timestamp,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data: data as PropertyAlertDB, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async updatePropertyAlert(alertId: string, updates: Partial<PropertyAlertDB>) {
+    try {
+      if (hasBackendApi()) {
+        const data = await backendApiRequest<PropertyAlertDB>(
+          `/api/v1/search/alerts/${encodeURIComponent(alertId)}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify(updates),
+          }
+        );
+        return { data, error: null };
+      }
+
+      const { data, error } = await supabase
+        .from('property_alerts')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', alertId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { data: data as PropertyAlertDB, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  },
+
+  async deletePropertyAlert(alertId: string) {
+    try {
+      if (hasBackendApi()) {
+        await backendApiRequest(`/api/v1/search/alerts/${encodeURIComponent(alertId)}`, {
+          method: 'DELETE',
+        });
+        return { error: null };
+      }
+
+      const { error } = await supabase.from('property_alerts').delete().eq('id', alertId);
+
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
+  },
+};
+
+/**
  * Property Service
  */
 export const propertyService = {
@@ -342,7 +775,7 @@ export const propertyService = {
     offset?: number;
   }) {
     try {
-      let query = supabase.from('properties').select('*');
+      let query = supabase.from('properties').select('*', { count: 'exact' });
 
       if (filters?.location) {
         query = query.ilike('location', `%${filters.location}%`);
@@ -467,6 +900,151 @@ export const propertyService = {
       return { data: null, error };
     }
   },
+
+  /**
+   * Search properties with richer filters
+   */
+  async searchProperties(params: {
+    query?: string;
+    filters?: {
+      city?: string;
+      region?: string;
+      type?: string[];
+      listingType?: string[];
+      priceRange?: {
+        min: number;
+        max: number;
+      };
+      bedrooms?: {
+        min?: number;
+        max?: number;
+      };
+      bathrooms?: {
+        min?: number;
+        max?: number;
+      };
+      area?: {
+        min?: number;
+        max?: number;
+      };
+      amenities?: string[];
+      features?: string[];
+      furnished?: boolean;
+      petFriendly?: boolean;
+      sortBy?: string;
+      page?: number;
+      limit?: number;
+    };
+  }) {
+    try {
+      let query = supabase.from('properties').select('*', { count: 'exact' });
+      const normalizedQuery = params.query?.trim();
+
+      if (normalizedQuery) {
+        query = query.or(
+          `title.ilike.%${normalizedQuery}%,description.ilike.%${normalizedQuery}%,location.ilike.%${normalizedQuery}%`
+        );
+      }
+
+      if (params.filters?.city) {
+        query = query.ilike('location', `%${params.filters.city}%`);
+      }
+
+      if (params.filters?.region) {
+        query = query.ilike('location', `%${params.filters.region}%`);
+      }
+
+      if (params.filters?.type?.length) {
+        query = query.in('type', params.filters.type);
+      }
+
+      if (params.filters?.listingType?.length) {
+        query = query.in('listing_type', params.filters.listingType);
+      }
+
+      if (params.filters?.priceRange) {
+        query = query
+          .gte('price', params.filters.priceRange.min)
+          .lte('price', params.filters.priceRange.max);
+      }
+
+      if (params.filters?.bedrooms?.min !== undefined) {
+        query = query.gte('bedrooms', params.filters.bedrooms.min);
+      }
+
+      if (params.filters?.bedrooms?.max !== undefined) {
+        query = query.lte('bedrooms', params.filters.bedrooms.max);
+      }
+
+      if (params.filters?.bathrooms?.min !== undefined) {
+        query = query.gte('bathrooms', params.filters.bathrooms.min);
+      }
+
+      if (params.filters?.bathrooms?.max !== undefined) {
+        query = query.lte('bathrooms', params.filters.bathrooms.max);
+      }
+
+      if (params.filters?.area?.min !== undefined) {
+        query = query.gte('area', params.filters.area.min);
+      }
+
+      if (params.filters?.area?.max !== undefined) {
+        query = query.lte('area', params.filters.area.max);
+      }
+
+      if (params.filters?.amenities?.length) {
+        query = query.contains('amenities', params.filters.amenities);
+      }
+
+      if (params.filters?.features?.length) {
+        params.filters.features.forEach((feature) => {
+          query = query.contains('features', { [feature]: true });
+        });
+      }
+
+      if (params.filters?.furnished !== undefined) {
+        query = query.contains('features', { furnished: params.filters.furnished });
+      }
+
+      if (params.filters?.petFriendly !== undefined) {
+        query = query.contains('features', { petFriendly: params.filters.petFriendly });
+      }
+
+      const sortBy = params.filters?.sortBy || 'date_desc';
+
+      switch (sortBy) {
+        case 'price_asc':
+          query = query.order('price', { ascending: true, nullsFirst: false });
+          break;
+        case 'price_desc':
+          query = query.order('price', { ascending: false, nullsFirst: false });
+          break;
+        case 'date_asc':
+          query = query.order('created_at', { ascending: true });
+          break;
+        case 'popularity':
+          query = query.order('views', { ascending: false, nullsFirst: false });
+          break;
+        case 'date_desc':
+        default:
+          query = query.order('created_at', { ascending: false });
+          break;
+      }
+
+      const page = Math.max(params.filters?.page || 1, 1);
+      const limit = Math.max(params.filters?.limit || 20, 1);
+      const offset = (page - 1) * limit;
+
+      query = query.range(offset, offset + limit - 1);
+
+      const { data, error, count } = await query;
+
+      if (error) throw error;
+      return { data, count, error: null };
+    } catch (error) {
+      return { data: null, count: null, error };
+    }
+  },
 };
 
 /**
@@ -478,6 +1056,18 @@ export const bookingService = {
    */
   async createBooking(bookingData: Partial<BookingDB>) {
     try {
+      if (hasBackendApi()) {
+        try {
+          const data = await backendApiRequest<BookingDB>('/api/v1/bookings', {
+            method: 'POST',
+            body: JSON.stringify(bookingData),
+          });
+          return { data, error: null };
+        } catch (backendError) {
+          console.warn('Backend booking creation failed, falling back to Supabase:', backendError);
+        }
+      }
+
       const { data, error } = await supabase
         .from('bookings')
         .insert({
@@ -500,6 +1090,15 @@ export const bookingService = {
    */
   async getBooking(bookingId: string) {
     try {
+      if (hasBackendApi()) {
+        try {
+          const data = await backendApiRequest<BookingDB>(`/api/v1/bookings/${encodeURIComponent(bookingId)}`);
+          return { data, error: null };
+        } catch (backendError) {
+          console.warn('Backend booking lookup failed, falling back to Supabase:', backendError);
+        }
+      }
+
       const { data, error } = await supabase
         .from('bookings')
         .select('*')
@@ -518,6 +1117,17 @@ export const bookingService = {
    */
   async getUserBookings(userId: string) {
     try {
+      if (hasBackendApi()) {
+        try {
+          const data = await backendApiRequest<BookingDB[]>(
+            `/api/v1/bookings/user/${encodeURIComponent(userId)}`
+          );
+          return { data, error: null };
+        } catch (backendError) {
+          console.warn('Backend booking history failed, falling back to Supabase:', backendError);
+        }
+      }
+
       const { data, error } = await supabase
         .from('bookings')
         .select('*')
@@ -536,6 +1146,21 @@ export const bookingService = {
    */
   async updateBookingStatus(bookingId: string, status: string) {
     try {
+      if (hasBackendApi()) {
+        try {
+          const data = await backendApiRequest<BookingDB>(
+            `/api/v1/bookings/${encodeURIComponent(bookingId)}/status`,
+            {
+              method: 'PATCH',
+              body: JSON.stringify({ status }),
+            }
+          );
+          return { data, error: null };
+        } catch (backendError) {
+          console.warn('Backend booking status update failed, falling back to Supabase:', backendError);
+        }
+      }
+
       const { data, error } = await supabase
         .from('bookings')
         .update({ status, updated_at: new Date().toISOString() })

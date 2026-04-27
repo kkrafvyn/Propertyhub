@@ -251,10 +251,10 @@ class SecurityManager {
   }
 
   /**
-   * Report to security monitoring service (mock implementation)
+   * Report to the configured security monitoring sink when available.
    */
   private static reportToSecurityService(event: SecurityEvent): void {
-    // In production, send to your security monitoring service
+    // Until a remote sink is wired in, keep local reporting scoped to development.
     if (process.env.NODE_ENV === 'development') {
       console.log('📊 Security Event Reported:', event);
     }

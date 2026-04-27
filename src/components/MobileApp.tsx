@@ -33,6 +33,9 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from './ui/avatar';
 import { Card } from './ui/card';
+import { useAppContext } from '../hooks/useAppContext';
+import { bookingService } from '../services/supabaseApi';
+import type { BookingDB } from '../types/database';
 
 interface MobileAppProps {
   properties: Property[];
@@ -192,16 +195,102 @@ function SwipeableCard({ property, onSwipeLeft, onSwipeRight, onTap }: Swipeable
   );
 }
 
+const formatBookingDateLabel = (value?: string): string => {
+  if (!value) return 'Date pending';
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Date pending';
+
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const mapBookingRecordToMobileBooking = (booking: BookingDB, properties: Property[]): Booking => {
+  const property = properties.find((entry) => entry.id === booking.property_id);
+  const totalAmount = Number(booking.total_price || property?.price || 0);
+
+  return {
+    id: booking.id,
+    propertyId: booking.property_id,
+    userId: booking.user_id,
+    hostId: booking.owner_id,
+    startDate: formatBookingDateLabel(booking.check_in),
+    endDate: formatBookingDateLabel(booking.check_out),
+    totalAmount,
+    currency: booking.currency || property?.currency || 'GHS',
+    status: booking.status,
+    createdAt: booking.created_at,
+    updatedAt: booking.updated_at,
+    confirmationCode: booking.id.slice(0, 8).toUpperCase(),
+    paymentStatus:
+      booking.payment_status === 'completed'
+        ? 'completed'
+        : booking.payment_status === 'failed'
+          ? 'failed'
+          : 'pending',
+    paymentMethod: booking.payment_method as Booking['paymentMethod'],
+    guestCount: booking.guests,
+    specialRequests: booking.note,
+    propertyTitle: property?.title || 'Property',
+    propertyImage: property?.images?.[0] || '',
+    type: property?.listingType || 'rent',
+    amount: totalAmount,
+    duration: `${formatBookingDateLabel(booking.check_in)} - ${formatBookingDateLabel(booking.check_out)}`,
+  };
+};
+
 export function MobileApp({ properties, currentUser, onLogout, onPropertySelect, selectedProperty, onNavigation, appState }: MobileAppProps) {
   const [currentView, setCurrentView] = useState<MobileAppView>('marketplace');
   const [currentPropertyIndex, setCurrentPropertyIndex] = useState(0);
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [userBookings, setUserBookings] = useState<Booking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const { isInstallable, installApp } = usePWAInstall();
+  const {
+    favoriteProperties: savedFavoriteIds,
+    toggleFavorite: toggleFavoriteProperty,
+  } = useAppContext();
 
-  // Mock user bookings for now - this would come from props in a real app
-  const userBookings: Booking[] = [];
+  useEffect(() => {
+    let isActive = true;
+
+    const loadUserBookings = async () => {
+      if (!currentUser) {
+        if (isActive) {
+          setUserBookings([]);
+          setBookingsLoading(false);
+        }
+        return;
+      }
+
+      setBookingsLoading(true);
+      const { data, error } = await bookingService.getUserBookings(currentUser.id);
+
+      if (!isActive) return;
+
+      if (error) {
+        console.error('Failed to load mobile bookings:', error);
+        setUserBookings([]);
+        setBookingsLoading(false);
+        return;
+      }
+
+      setUserBookings(
+        (data || []).map((booking) => mapBookingRecordToMobileBooking(booking as BookingDB, properties)),
+      );
+      setBookingsLoading(false);
+    };
+
+    void loadUserBookings();
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser, properties]);
 
   // Filter properties based on search
   const filteredProperties = properties.filter(property =>
@@ -221,28 +310,22 @@ export function MobileApp({ properties, currentUser, onLogout, onPropertySelect,
   const handleSwipeRight = () => {
     // Like - add to favorites and move to next
     if (currentProperty) {
-      setFavorites(prev => [...prev, currentProperty.id]);
+      if (!savedFavoriteIds.includes(currentProperty.id)) {
+        toggleFavoriteProperty(currentProperty.id);
+      }
       if (currentPropertyIndex < filteredProperties.length - 1) {
         setCurrentPropertyIndex(currentPropertyIndex + 1);
       }
     }
   };
 
-  const toggleFavorite = (propertyId: string) => {
-    setFavorites(prev => 
-      prev.includes(propertyId) 
-        ? prev.filter(id => id !== propertyId)
-        : [...prev, propertyId]
-    );
-  };
-
-  const favoriteProperties = properties.filter(p => favorites.includes(p.id));
+  const favoriteProperties = properties.filter((property) => savedFavoriteIds.includes(property.id));
 
   // Mobile Navigation Items
   const navItems = [
     { id: 'marketplace', label: 'Home', icon: Home, view: 'marketplace' },
     { id: 'search', label: 'Search', icon: Search, view: 'search' },
-    { id: 'favorites', label: 'Saved', icon: Heart, view: 'favorites', badge: favorites.length },
+    { id: 'favorites', label: 'Saved', icon: Heart, view: 'favorites', badge: savedFavoriteIds.length },
     { id: 'bookings', label: 'Trips', icon: Calendar, view: 'bookings', badge: userBookings.length },
     { id: 'profile', label: 'Profile', icon: User, view: 'profile' },
   ];
@@ -412,7 +495,13 @@ export function MobileApp({ properties, currentUser, onLogout, onPropertySelect,
                             <p className="text-sm text-muted-foreground line-clamp-1">{getLocationLabel(property.location)}</p>
                             <div className="flex items-center justify-between">
                               <span className="font-semibold">GHS {property.price.toLocaleString()}</span>
-                              <Heart className="w-5 h-5 text-red-500 fill-red-500" />
+                              <Heart
+                                className={`w-5 h-5 ${
+                                  savedFavoriteIds.includes(property.id)
+                                    ? 'fill-red-500 text-red-500'
+                                    : 'text-muted-foreground'
+                                }`}
+                              />
                             </div>
                           </div>
                         </div>
@@ -482,7 +571,13 @@ export function MobileApp({ properties, currentUser, onLogout, onPropertySelect,
               transition={{ duration: 0.3 }}
             >
               <div className="p-4 space-y-4">
-                {userBookings.length > 0 ? (
+                {bookingsLoading ? (
+                  <div className="text-center py-12">
+                    <Calendar className="w-16 h-16 mx-auto text-muted-foreground mb-4 animate-pulse" />
+                    <h3 className="text-xl font-semibold mb-2">Loading bookings</h3>
+                    <p className="text-muted-foreground">Fetching your latest trips and rental activity.</p>
+                  </div>
+                ) : userBookings.length > 0 ? (
                   userBookings.map((booking, index) => (
                     <motion.div
                       key={booking.id}

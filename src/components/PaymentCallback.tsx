@@ -17,8 +17,8 @@ interface PaymentCallbackProps {
 }
 
 export const PaymentCallback: React.FC<PaymentCallbackProps> = ({ onNavigate, onSuccess, onError }) => {
-  const searchParams = new URLSearchParams(window.location.search);
-  const { verifyPayment, loading } = usePayment();
+  const search = typeof window !== 'undefined' ? window.location.search : '';
+  const { verifyPayment } = usePayment();
 
   const [verificationStatus, setVerificationStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
   const [message, setMessage] = useState('Verifying payment...');
@@ -27,6 +27,7 @@ export const PaymentCallback: React.FC<PaymentCallbackProps> = ({ onNavigate, on
   useEffect(() => {
     const verifyAndProcess = async () => {
       try {
+        const searchParams = new URLSearchParams(search);
         // Get payment info from sessionStorage
         const paymentCallbackStr = sessionStorage.getItem('paymentCallback');
         if (!paymentCallbackStr) {
@@ -36,7 +37,11 @@ export const PaymentCallback: React.FC<PaymentCallbackProps> = ({ onNavigate, on
         const { transactionId, reference, provider } = JSON.parse(paymentCallbackStr);
 
         // Get reference from URL if not in session
-        const urlReference = searchParams.get('reference');
+        const urlReference =
+          searchParams.get('reference') ||
+          searchParams.get('trxref') ||
+          searchParams.get('tx_ref') ||
+          searchParams.get('transaction_id');
         const finalReference = reference || urlReference;
 
         if (!finalReference || !transactionId) {
@@ -79,7 +84,7 @@ export const PaymentCallback: React.FC<PaymentCallbackProps> = ({ onNavigate, on
     };
 
     verifyAndProcess();
-  }, [searchParams, verifyPayment, onSuccess, onError, onNavigate]);
+  }, [search, verifyPayment, onSuccess, onError, onNavigate]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -177,10 +182,10 @@ export const PaymentCallback: React.FC<PaymentCallbackProps> = ({ onNavigate, on
           {verificationStatus === 'error' && (
             <>
               <button
-                onClick={() => onNavigate?.('payments')}
+                onClick={() => onNavigate?.('dashboard')}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200"
               >
-                Try Again
+                Back to Dashboard
               </button>
               <button
                 onClick={() => onNavigate?.('dashboard')}

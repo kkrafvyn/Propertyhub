@@ -54,7 +54,13 @@ interface MapStats {
   lastCleanup: string;
 }
 
-export function OfflineMapManager({ currentUser, properties, userBookings, selectedProperty, onBack }: OfflineMapManagerProps) {
+export function OfflineMapManager({
+  currentUser,
+  properties = [],
+  userBookings = [],
+  selectedProperty,
+  onBack,
+}: OfflineMapManagerProps) {
   const [offlineAreas, setOfflineAreas] = useState<OfflineArea[]>([]);
   const [mapStats, setMapStats] = useState<MapStats | null>(null);
   const [networkStatus, setNetworkStatus] = useState<'online' | 'offline' | 'slow'>('online');
@@ -190,7 +196,7 @@ export function OfflineMapManager({ currentUser, properties, userBookings, selec
     return properties.filter(property => 
       userBookings.some(booking => 
         booking.propertyId === property.id && 
-        booking.status === 'active'
+        ['active', 'confirmed', 'in_progress'].includes(String(booking.status || '').toLowerCase())
       )
     );
   };

@@ -55,7 +55,10 @@ const applyAllFilters = (property: Property, filters: PropertyFilters): boolean 
     if (Array.isArray(filters.bedrooms) && filters.bedrooms.length > 0 && property.bedrooms) {
       const hasMatchingBedrooms = filters.bedrooms.some(bedCount => {
         if (bedCount === 'any') return true;
-        if (bedCount === '4+') return property.bedrooms! >= 4;
+        if (bedCount === '4+' || bedCount === '5+') {
+          const minimumBedrooms = parseInt(String(bedCount), 10);
+          return property.bedrooms! >= minimumBedrooms;
+        }
         return property.bedrooms === parseInt(bedCount.toString());
       });
       if (!hasMatchingBedrooms) return false;
@@ -65,7 +68,10 @@ const applyAllFilters = (property: Property, filters: PropertyFilters): boolean 
     if (Array.isArray(filters.bathrooms) && filters.bathrooms.length > 0 && property.bathrooms) {
       const hasMatchingBathrooms = filters.bathrooms.some(bathCount => {
         if (bathCount === 'any') return true;
-        if (bathCount === '3+') return property.bathrooms! >= 3;
+        if (bathCount === '3+' || bathCount === '4+') {
+          const minimumBathrooms = parseInt(String(bathCount), 10);
+          return property.bathrooms! >= minimumBathrooms;
+        }
         return property.bathrooms === parseInt(bathCount.toString());
       });
       if (!hasMatchingBathrooms) return false;
@@ -90,10 +96,31 @@ const applyAllFilters = (property: Property, filters: PropertyFilters): boolean 
 
     // Availability filter
     if (filters.availability && filters.availability.length > 0) {
-      const isAvailable = property.available;
+      const propertyStatus = String(property.status || '').toLowerCase();
+      const isAvailable = property.available ?? propertyStatus === 'available';
       const hasMatchingAvailability = filters.availability.some(status => {
-        if (status === 'available') return isAvailable;
-        if (status === 'unavailable') return !isAvailable;
+        const normalizedStatus = status.toLowerCase();
+
+        if (normalizedStatus === 'available' || normalizedStatus === 'available now') {
+          return isAvailable || propertyStatus === 'available';
+        }
+
+        if (normalizedStatus === 'coming-soon') {
+          return propertyStatus === 'pending' || propertyStatus === 'coming-soon';
+        }
+
+        if (normalizedStatus === 'reserved') {
+          return propertyStatus === 'reserved';
+        }
+
+        if (normalizedStatus === 'unavailable') {
+          return !isAvailable;
+        }
+
+        if (normalizedStatus === propertyStatus) {
+          return true;
+        }
+
         return true;
       });
       if (!hasMatchingAvailability) return false;

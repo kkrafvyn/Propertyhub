@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from './ErrorBoundary';
 import { ThemeProvider } from './ThemeProvider';
 import { AppContextProvider } from '../hooks/useAppContext';
@@ -12,6 +13,7 @@ import { PerformanceMonitor } from './performance/PerformanceOptimizer';
 import { GeocodingProvider } from './geocoding/GeocodingProvider';
 import { EnhancedSearchProvider } from './EnhancedSearchProvider';
 import { ChatProvider } from './ChatProvider';
+import { queryClient } from '../utils/queryClient';
 
 interface AppWrapperProps {
   children: React.ReactNode;
@@ -39,19 +41,21 @@ export const AppWrapper: React.FC<AppWrapperProps> = ({ children }) => {
 
   return (
     <ErrorBoundary>
-      <ThemeProvider>
-        <AppContextProvider>
-          <GeocodingProvider>
-            <EnhancedSearchProvider>
-              <ChatProvider>
-                <PerformanceMonitor>
-                  {children}
-                </PerformanceMonitor>
-              </ChatProvider>
-            </EnhancedSearchProvider>
-          </GeocodingProvider>
-        </AppContextProvider>
-      </ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <AppContextProvider>
+            <GeocodingProvider>
+              <EnhancedSearchProvider>
+                <ChatProvider>
+                  <PerformanceMonitor>
+                    {children}
+                  </PerformanceMonitor>
+                </ChatProvider>
+              </EnhancedSearchProvider>
+            </GeocodingProvider>
+          </AppContextProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 };

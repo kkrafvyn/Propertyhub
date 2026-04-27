@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import { ExpoWebSocketService, getChatService } from '../chat/ExpoWebSocketService';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { ExpoWebSocketService, getChatService } from '../chat/ExpoWebSocketService';
+import { envConfig } from '../../utils/envConfig';
 
 interface WebSocketProviderState {
   isConnected: boolean;
@@ -34,17 +35,20 @@ interface WebSocketProviderProps {
 export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<any>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<
+    'connecting' | 'connected' | 'disconnected' | 'error'
+  >('disconnected');
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
   const [chatService, setChatService] = useState<ExpoWebSocketService | null>(null);
+  const resolvedUrl = url || envConfig.WEBSOCKET_URL;
 
   const connect = () => {
     try {
-      if (!url) return;
-      
+      if (!resolvedUrl) return;
+
       setConnectionStatus('connecting');
-      ws.current = new WebSocket(url);
+      ws.current = new WebSocket(resolvedUrl);
 
       ws.current.onopen = () => {
         setIsConnected(true);
@@ -56,7 +60,7 @@ export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
         try {
           const data = JSON.parse(event.data);
           setLastMessage(data);
-        } catch (error) {
+        } catch {
           setLastMessage(event.data);
         }
       };
@@ -65,8 +69,7 @@ export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
         setIsConnected(false);
         setConnectionStatus('disconnected');
         console.log('WebSocket disconnected');
-        
-        // Reconnect after 3 seconds
+
         reconnectTimeout.current = setTimeout(() => {
           connect();
         }, 3000);
@@ -83,38 +86,36 @@ export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
   };
 
   useEffect(() => {
-    if (url) {
+    if (resolvedUrl) {
       connect();
     }
 
-    // Initialize chat service
     const service = getChatService({
-      url: url || 'wss://your-chat-server.com',
+      url: resolvedUrl,
       reconnectInterval: 3000,
-      maxReconnectAttempts: 10
+      maxReconnectAttempts: 10,
     });
 
     setChatService(service);
 
-    // Set up chat service event listeners
     const handleChatConnected = () => {
-      console.log('💬 Chat service connected');
-      toast.success('💬 Chat connected');
+      console.log('Chat service connected');
+      toast.success('Chat connected');
     };
 
     const handleChatDisconnected = () => {
-      console.log('💬 Chat service disconnected');
-      toast.info('💬 Chat disconnected');
+      console.log('Chat service disconnected');
+      toast.info('Chat disconnected');
     };
 
-    const handleChatError = (error: any) => {
-      console.error('💬 Chat service error:', error);
-      toast.error('💬 Chat connection error');
+    const handleChatError = (error: unknown) => {
+      console.error('Chat service error:', error);
+      toast.error('Chat connection error');
     };
 
     const handleMaxReconnectAttempts = () => {
-      console.error('💬 Chat service max reconnection attempts reached');
-      toast.error('💬 Unable to connect to chat. Please refresh.');
+      console.error('Chat service max reconnection attempts reached');
+      toast.error('Unable to connect to chat. Please refresh.');
     };
 
     service.on('connected', handleChatConnected);
@@ -129,14 +130,13 @@ export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
       if (ws.current) {
         ws.current.close();
       }
-      
-      // Clean up chat service
+
       service.off('connected', handleChatConnected);
       service.off('disconnected', handleChatDisconnected);
       service.off('error', handleChatError);
       service.off('max_reconnection_attempts_reached', handleMaxReconnectAttempts);
     };
-  }, [url]);
+  }, [resolvedUrl]);
 
   const send = (data: any) => {
     try {
@@ -152,18 +152,18 @@ export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
 
   const connectChat = async (userId: string): Promise<boolean> => {
     if (!chatService) return false;
-    
+
     try {
       const success = await chatService.connect(userId);
       if (success) {
-        toast.success('💬 Chat connected successfully');
+        toast.success('Chat connected successfully');
       } else {
-        toast.error('💬 Failed to connect chat');
+        toast.error('Failed to connect chat');
       }
       return success;
     } catch (error) {
       console.error('Failed to connect chat:', error);
-      toast.error('💬 Chat connection error');
+      toast.error('Chat connection error');
       return false;
     }
   };
@@ -171,7 +171,7 @@ export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
   const disconnectChat = () => {
     if (chatService) {
       chatService.disconnect();
-      toast.info('💬 Chat disconnected');
+      toast.info('Chat disconnected');
     }
   };
 
@@ -186,17 +186,19 @@ export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
   };
 
   return (
-    <WebSocketContext.Provider value={{ 
-      isConnected, 
-      send, 
-      sendMessage: send,
-      lastMessage, 
-      connectionStatus,
-      chatService,
-      connectChat,
-      disconnectChat,
-      subscribe
-    }}>
+    <WebSocketContext.Provider
+      value={{
+        isConnected,
+        send,
+        sendMessage: send,
+        lastMessage,
+        connectionStatus,
+        chatService,
+        connectChat,
+        disconnectChat,
+        subscribe,
+      }}
+    >
       {children}
     </WebSocketContext.Provider>
   );

@@ -1,4 +1,5 @@
 import React, { createContext, useContext } from 'react';
+import { geocodeAddressWithAvailableProvider } from '../../utils/mapService';
 
 interface GeocodingResult {
   formattedAddress: string;
@@ -14,13 +15,7 @@ const GeocodingContext = createContext<GeocodingContextType | undefined>(undefin
 export function GeocodingProvider({ children }: { children: React.ReactNode }) {
   const geocodeAddress = async (address: string): Promise<GeocodingResult | null> => {
     try {
-      // Mock geocoding - in real app this would use Google Maps or similar API
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      return {
-        formattedAddress: address,
-        coordinates: { lat: 5.6037, lng: -0.1870 } // Accra coordinates as default
-      };
+      return await geocodeAddressWithAvailableProvider(address);
     } catch (error) {
       console.error('Geocoding error:', error);
       return null;

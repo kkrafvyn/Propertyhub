@@ -13,12 +13,26 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
+import { useQueryClient } from '@tanstack/react-query';
 import { User, Property, AppState, SearchFilters, Notification, Theme } from '../types';
 import { supabase, isSupabaseConfigured } from '../services/supabaseClient';
-import { authService } from '../services/supabaseApi';
+import { authService, favoriteService, propertyService, userService } from '../services/supabaseApi';
+import {
+  fetchPropertyCatalog,
+  fetchPropertySearch,
+  filterPropertiesLocally,
+  hasMeaningfulSearchFilters,
+  propertyQueryKeys,
+} from '../services/propertyCatalog';
 import { consumePendingOAuthRole } from '../utils/auth';
 import { mapSupabaseUserToAppUser } from '../utils/authUser';
 import { applyTheme, normalizeTheme } from '../utils/theme';
+import { normalizeProperty, normalizeProperties } from '../utils/propertyNormalization';
+import {
+  serializePropertyForCreate,
+  serializePropertyForUpdate,
+  serializeUserProfileUpdate,
+} from '../utils/propertyPersistence';
 
 // Safe check for browser APIs
 const isBrowser = typeof window !== 'undefined';
@@ -29,6 +43,10 @@ const FAVORITES_STORAGE_KEY = 'favoriteProperties';
 const COMPARED_STORAGE_KEY = 'comparedProperties';
 const RECENTLY_VIEWED_STORAGE_KEY = 'recentlyViewedProperties';
 const REDUCED_MOTION_STORAGE_KEY = 'reducedMotion';
+const PROPERTY_CATALOG_PARAMS = {
+  limit: 100,
+  offset: 0,
+} as const;
 
 const hydrateSupabaseUser = async (authUser: SupabaseAuthUser): Promise<User> => {
   const preferredRole = consumePendingOAuthRole();
@@ -40,6 +58,22 @@ const hydrateSupabaseUser = async (authUser: SupabaseAuthUser): Promise<User> =>
 
   return mapSupabaseUserToAppUser(authUser, profile, preferredRole);
 };
+
+const mergeUserProfile = (currentUser: User, profile: Record<string, any>): User => ({
+  ...currentUser,
+  email: typeof profile.email === 'string' ? profile.email : currentUser.email,
+  name: typeof profile.name === 'string' ? profile.name : currentUser.name,
+  role: typeof profile.role === 'string' ? profile.role : currentUser.role,
+  status: typeof profile.status === 'string' ? profile.status : currentUser.status,
+  avatar: typeof profile.avatar === 'string' ? profile.avatar : currentUser.avatar,
+  bio: typeof profile.bio === 'string' ? profile.bio : currentUser.bio,
+  phone: typeof profile.phone === 'string' ? profile.phone : currentUser.phone,
+  verified: typeof profile.verified === 'boolean' ? profile.verified : currentUser.verified,
+  preferences: profile.preferences || currentUser.preferences,
+  updatedAt: typeof profile.updated_at === 'string' ? profile.updated_at : currentUser.updatedAt,
+  lastLoginAt:
+    typeof profile.last_login_at === 'string' ? profile.last_login_at : currentUser.lastLoginAt,
+});
 
 const readCachedUser = (): User | null => {
   if (!hasLocalStorage) return null;
@@ -284,6 +318,7 @@ class NavigationHistory {
 export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AppContextState>(getInitialState);
   const [navigationHistory] = useState(() => new NavigationHistory());
+  const queryClient = useQueryClient();
   
   // Track online status
   useEffect(() => {
@@ -419,10 +454,12 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       if (event === 'SIGNED_OUT') {
         clearCachedUser();
+        persistStringArray(FAVORITES_STORAGE_KEY, []);
         setState(prev => ({
           ...prev,
           currentUser: null,
           isAuthenticated: false,
+          favoriteProperties: [],
           appState: prev.appState === 'splash' ? prev.appState : 'auth-landing',
         }));
       }
@@ -433,26 +470,28 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       subscription.unsubscribe();
     };
   }, []);
-  
+
   // Load properties function
   const loadProperties = useCallback(async (): Promise<void> => {
     try {
       if (!isSupabaseConfigured()) {
         console.warn('Supabase not configured, using empty property list.');
-        setState(prev => ({ ...prev, properties: [], loading: false }));
+        setState(prev => ({
+          ...prev,
+          properties: [],
+          loading: false,
+        }));
         return;
       }
 
       setState(prev => ({ ...prev, loading: true }));
 
-      const { data, error } = await supabase
-        .from('properties')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const properties = await queryClient.fetchQuery({
+        queryKey: propertyQueryKeys.catalog(PROPERTY_CATALOG_PARAMS),
+        queryFn: () => fetchPropertyCatalog(PROPERTY_CATALOG_PARAMS),
+        staleTime: 60_000,
+      });
 
-      if (error) throw error;
-
-      const properties = (data || []) as Property[];
       setState(prev => ({ ...prev, properties, loading: false }));
       
       // Cache for offline use
@@ -477,9 +516,80 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       
     } catch (error) {
       console.error('Failed to load properties:', error);
-      setState(prev => ({ ...prev, loading: false, error: 'Failed to load properties' }));
+      setState(prev => ({
+        ...prev,
+        properties: prev.properties,
+        loading: false,
+        error: 'Failed to load properties',
+      }));
+    }
+  }, [queryClient]);
+
+  const loadFavoritePropertyIds = useCallback(async (userId: string): Promise<void> => {
+    if (!isSupabaseConfigured()) return;
+
+    try {
+      const { data, error } = await favoriteService.getUserFavorites(userId);
+      if (error) throw error;
+
+      const favoritePropertyIds = (data || [])
+        .map((favorite) => favorite.property_id)
+        .filter((propertyId): propertyId is string => typeof propertyId === 'string');
+
+      persistStringArray(FAVORITES_STORAGE_KEY, favoritePropertyIds);
+      setState((prev) =>
+        prev.currentUser?.id === userId
+          ? {
+              ...prev,
+              favoriteProperties: favoritePropertyIds,
+            }
+          : prev
+      );
+    } catch (error) {
+      console.error('Failed to load favorite properties:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (!state.currentUser?.id || !isSupabaseConfigured()) return;
+    void loadFavoritePropertyIds(state.currentUser.id);
+  }, [loadFavoritePropertyIds, state.currentUser?.id]);
+
+  const performSearchRequest = useCallback(
+    async (query: string, filters: SearchFilters): Promise<Property[]> => {
+      const normalizedQuery = query.trim();
+      const hasSearchIntent = Boolean(normalizedQuery) || hasMeaningfulSearchFilters(filters);
+
+      if (!hasSearchIntent) {
+        return [];
+      }
+
+      if (!isSupabaseConfigured()) {
+        return filterPropertiesLocally(state.properties, normalizedQuery, filters);
+      }
+
+      try {
+        const results = await queryClient.fetchQuery({
+          queryKey: propertyQueryKeys.search({
+            query: normalizedQuery,
+            filters,
+          }),
+          queryFn: () =>
+            fetchPropertySearch({
+              query: normalizedQuery,
+              filters,
+            }),
+          staleTime: 30_000,
+        });
+
+        return results;
+      } catch (error) {
+        console.error('Server-side property search failed, using local fallback:', error);
+        return filterPropertiesLocally(state.properties, normalizedQuery, filters);
+      }
+    },
+    [queryClient, state.properties]
+  );
 
   const syncData = useCallback(async (): Promise<void> => {
     if (!navigator.onLine) return;
@@ -551,10 +661,12 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         console.error('Logout error:', error);
       } finally {
         clearCachedUser();
+        persistStringArray(FAVORITES_STORAGE_KEY, []);
         setState(prev => ({
           ...prev,
           currentUser: null,
           isAuthenticated: false,
+          favoriteProperties: [],
           appState: 'auth-landing'
         }));
       }
@@ -562,8 +674,41 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     
     updateUser: async (userData: Partial<User>) => {
       if (!state.currentUser) return;
-      
-      const updatedUser = { ...state.currentUser, ...userData };
+
+      let updatedUser = { ...state.currentUser, ...userData };
+
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await userService.updateProfile(
+            state.currentUser.id,
+            serializeUserProfileUpdate({
+              email: updatedUser.email,
+              name: updatedUser.name,
+              role: updatedUser.role,
+              status: updatedUser.status,
+              avatar: updatedUser.avatar,
+              bio: updatedUser.bio,
+              phone: updatedUser.phone,
+              verified: updatedUser.verified,
+              preferences: updatedUser.preferences as Record<string, any> | undefined,
+            })
+          );
+
+          if (error) throw error;
+
+          if (data) {
+            updatedUser = mergeUserProfile(updatedUser, data as Record<string, any>);
+          }
+        } catch (error) {
+          console.error('Failed to persist profile update:', error);
+          setState(prev => ({
+            ...prev,
+            error: 'Failed to update profile',
+          }));
+          return;
+        }
+      }
+
       persistCachedUser(updatedUser);
       
       setState(prev => ({
@@ -574,13 +719,69 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     
     // Properties
     addProperty: async (property: Property) => {
+      if (state.currentUser && isSupabaseConfigured()) {
+        try {
+          const { data, error } = await propertyService.createProperty(
+            state.currentUser.id,
+            serializePropertyForCreate(property, state.currentUser.id)
+          );
+
+        if (error) throw error;
+
+        const createdProperty = data ? normalizeProperty(data) : property;
+        queryClient.setQueryData<Property[]>(
+          propertyQueryKeys.catalog(PROPERTY_CATALOG_PARAMS),
+          (existing = []) => [createdProperty, ...existing.filter((item) => item.id !== createdProperty.id)]
+        );
+        queryClient.setQueryData(propertyQueryKeys.detail(createdProperty.id), createdProperty);
+        void queryClient.invalidateQueries({ queryKey: propertyQueryKeys.all });
+        setState(prev => ({
+          ...prev,
+          properties: [createdProperty, ...prev.properties],
+        }));
+        return;
+        } catch (error) {
+          console.error('Failed to create property:', error);
+          setState(prev => ({
+            ...prev,
+            error: 'Failed to create property',
+          }));
+          throw error;
+        }
+      }
+
       setState(prev => ({
         ...prev,
         properties: [property, ...prev.properties]
       }));
+      queryClient.setQueryData<Property[]>(
+        propertyQueryKeys.catalog(PROPERTY_CATALOG_PARAMS),
+        (existing = []) => [property, ...existing.filter((item) => item.id !== property.id)]
+      );
     },
 
     deleteProperty: async (propertyId: string) => {
+      if (isSupabaseConfigured()) {
+        try {
+          const { error } = await propertyService.deleteProperty(propertyId);
+          if (error) throw error;
+        } catch (error) {
+          console.error('Failed to delete property:', error);
+          setState(prev => ({
+            ...prev,
+            error: 'Failed to delete property',
+          }));
+          throw error;
+        }
+      }
+
+      queryClient.setQueryData<Property[]>(
+        propertyQueryKeys.catalog(PROPERTY_CATALOG_PARAMS),
+        (existing = []) => existing.filter((property) => property.id !== propertyId)
+      );
+      queryClient.removeQueries({ queryKey: propertyQueryKeys.detail(propertyId), exact: true });
+      void queryClient.invalidateQueries({ queryKey: propertyQueryKeys.all });
+
       setState(prev => ({
         ...prev,
         properties: prev.properties.filter((property) => property.id !== propertyId),
@@ -614,12 +815,37 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     },
     
     toggleFavorite: (propertyId: string) => {
+      const wasFavorite = state.favoriteProperties.includes(propertyId);
       const newFavorites = state.favoriteProperties.includes(propertyId)
         ? state.favoriteProperties.filter(id => id !== propertyId)
         : [...state.favoriteProperties, propertyId];
 
       persistStringArray(FAVORITES_STORAGE_KEY, newFavorites);
       setState(prev => ({ ...prev, favoriteProperties: newFavorites }));
+
+      if (state.currentUser && isSupabaseConfigured()) {
+        const previousFavorites = state.favoriteProperties;
+
+        void (async () => {
+          try {
+            if (wasFavorite) {
+              const { error } = await favoriteService.removeFavorite(state.currentUser!.id, propertyId);
+              if (error) throw error;
+            } else {
+              const { error } = await favoriteService.addFavorite(state.currentUser!.id, propertyId);
+              if (error) throw error;
+            }
+          } catch (error) {
+            console.error('Failed to persist favorite change:', error);
+            persistStringArray(FAVORITES_STORAGE_KEY, previousFavorites);
+            setState((prev) => ({
+              ...prev,
+              favoriteProperties: previousFavorites,
+              error: 'Failed to update saved homes',
+            }));
+          }
+        })();
+      }
     },
 
     toggleCompareProperty: (propertyId: string) => {
@@ -648,12 +874,62 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     },
     
     updateProperty: async (propertyId: string, updates: Partial<Property>) => {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await propertyService.updateProperty(
+            propertyId,
+            serializePropertyForUpdate(updates)
+          );
+
+          if (error) throw error;
+
+          const updatedProperty = data
+            ? normalizeProperty(data)
+            : normalizeProperty({
+                ...state.properties.find((property) => property.id === propertyId),
+                ...updates,
+              });
+
+          queryClient.setQueryData<Property[]>(
+            propertyQueryKeys.catalog(PROPERTY_CATALOG_PARAMS),
+            (existing = []) =>
+              existing.map((property) => (property.id === propertyId ? updatedProperty : property))
+          );
+          queryClient.setQueryData(propertyQueryKeys.detail(propertyId), updatedProperty);
+          void queryClient.invalidateQueries({ queryKey: propertyQueryKeys.all });
+
+          setState(prev => ({
+            ...prev,
+            properties: prev.properties.map((property) =>
+              property.id === propertyId ? updatedProperty : property
+            ),
+            selectedProperty:
+              prev.selectedProperty?.id === propertyId ? updatedProperty : prev.selectedProperty,
+          }));
+          return;
+        } catch (error) {
+          console.error('Failed to update property:', error);
+          setState(prev => ({
+            ...prev,
+            error: 'Failed to update property',
+          }));
+          throw error;
+        }
+      }
+
       setState(prev => ({
         ...prev,
         properties: prev.properties.map(p => 
           p.id === propertyId ? { ...p, ...updates } : p
         )
       }));
+      queryClient.setQueryData<Property[]>(
+        propertyQueryKeys.catalog(PROPERTY_CATALOG_PARAMS),
+        (existing = []) =>
+          existing.map((property) =>
+            property.id === propertyId ? { ...property, ...updates } as Property : property
+          )
+      );
     },
     
     refreshProperties: async () => {
@@ -663,38 +939,28 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // Search
     setSearchQuery: (query: string) => {
       setState(prev => ({ ...prev, searchQuery: query }));
-      if (query.trim()) {
-        actions.performSearch();
-      } else {
-        setState(prev => ({ ...prev, searchResults: [] }));
-      }
-    },
-    
-    updateSearchFilters: (filters: Partial<SearchFilters>) => {
-      setState(prev => ({
-        ...prev,
-        searchFilters: { ...prev.searchFilters, ...filters }
-      }));
-      actions.performSearch();
-    },
-    
-    performSearch: async () => {
-      const query = state.searchQuery.toLowerCase().trim();
-      if (!query) {
+      if (!query.trim() && !hasMeaningfulSearchFilters(state.searchFilters)) {
         setState(prev => ({ ...prev, searchResults: [] }));
         return;
       }
-      
-      const results = state.properties.filter(property => {
-        const locationString = typeof property.location === 'string' 
-          ? property.location 
-          : property.location?.city || '';
-        
-        return property.title.toLowerCase().includes(query) ||
-               property.description.toLowerCase().includes(query) ||
-               locationString.toLowerCase().includes(query);
+      void performSearchRequest(query, state.searchFilters).then((results) => {
+        setState((prev) => ({ ...prev, searchResults: results }));
       });
-      
+    },
+    
+    updateSearchFilters: (filters: Partial<SearchFilters>) => {
+      const nextFilters = { ...state.searchFilters, ...filters };
+      setState(prev => ({
+        ...prev,
+        searchFilters: nextFilters
+      }));
+      void performSearchRequest(state.searchQuery, nextFilters).then((results) => {
+        setState((prev) => ({ ...prev, searchResults: results }));
+      });
+    },
+    
+    performSearch: async () => {
+      const results = await performSearchRequest(state.searchQuery, state.searchFilters);
       setState(prev => ({ ...prev, searchResults: results }));
     },
     
@@ -818,7 +1084,7 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     
     syncData
     
-  }), [state, loadProperties, navigationHistory, syncData]);
+  }), [state, loadProperties, navigationHistory, performSearchRequest, queryClient, syncData]);
   
   const contextValue: AppContextType = useMemo(() => ({
     ...state,

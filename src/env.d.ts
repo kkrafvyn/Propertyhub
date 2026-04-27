@@ -72,14 +72,18 @@ declare namespace google {
 declare const google: any;
 
 interface ImportMetaEnv {
-  readonly VITE_WEBSOCKET_URL: string;
-  readonly VITE_API_URL: string;
-  readonly VITE_VAPID_PUBLIC_KEY: string;
+  readonly VITE_WEBSOCKET_URL?: string;
+  readonly VITE_API_URL?: string;
+  readonly VITE_MONITORING_ENDPOINT?: string;
+  readonly VITE_VAPID_PUBLIC_KEY?: string;
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_PROJECT_ID?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
+  readonly VITE_SUPABASE_EDGE_FUNCTION_NAME?: string;
   readonly VITE_GOOGLE_MAPS_API_KEY?: string;
+  readonly VITE_MAPBOX_ACCESS_TOKEN?: string;
+  readonly VITE_MAP_DISPLAY_PROVIDER?: 'google' | 'mapbox';
   
   // Payment Configuration
   readonly VITE_PAYSTACK_PUBLIC_KEY?: string;

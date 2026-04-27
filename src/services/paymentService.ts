@@ -33,7 +33,7 @@ import type {
  * ============================================
  */
 
-const PAYMENT_API_BASE = (envConfig.API_URL || 'http://localhost:8080').replace(/\/$/, '');
+const PAYMENT_API_BASE = envConfig.API_URL.replace(/\/$/, '');
 
 const getPaymentAuthToken = (): string | null => {
   if (typeof window === 'undefined') return null;
@@ -82,6 +82,10 @@ const requestPaymentApi = async <T = any>(
   options: RequestInit,
   defaultError: string
 ): Promise<T> => {
+  if (!PAYMENT_API_BASE) {
+    throw new Error('Payment backend is not configured. Set VITE_API_URL for this deployment.');
+  }
+
   let lastError: Error | null = null;
 
   for (const endpoint of endpointCandidates) {
@@ -142,7 +146,7 @@ export const paystackService = {
   ): Promise<{ authorization_url: string; reference: string; access_code: string }> {
     try {
       const payload = await requestPaymentApi(
-        ['/api/payments/initialize', '/api/v1/payments/initialize'],
+        ['/api/v1/payments/initialize', '/api/payments/initialize'],
         {
           method: 'POST',
           headers: buildPaymentHeaders(),
@@ -172,8 +176,8 @@ export const paystackService = {
     try {
       return await requestPaymentApi(
         [
-          `/api/payments/${encodeURIComponent(reference)}/status`,
           `/api/v1/payments/${encodeURIComponent(reference)}/verify`,
+          `/api/payments/${encodeURIComponent(reference)}/status`,
         ],
         {
           method: 'GET',
@@ -224,7 +228,7 @@ export const flutterwaveService = {
   ): Promise<{ link: string }> {
     try {
       const payload = await requestPaymentApi(
-        ['/api/payments/initialize', '/api/v1/payments/initialize'],
+        ['/api/v1/payments/initialize', '/api/payments/initialize'],
         {
           method: 'POST',
           headers: buildPaymentHeaders(),
@@ -255,8 +259,8 @@ export const flutterwaveService = {
     try {
       return await requestPaymentApi(
         [
-          `/api/payments/${encodeURIComponent(transaction_id)}/status`,
           `/api/v1/payments/${encodeURIComponent(transaction_id)}/verify`,
+          `/api/payments/${encodeURIComponent(transaction_id)}/status`,
         ],
         {
           method: 'GET',

@@ -5,7 +5,7 @@
 // Mock payment providers
 class MockPaystackService {
   initializeTransaction(email, amount, metadata = {}) {
-    if (!email || !amount) {
+    if (!email || amount == null) {
       throw new Error('Email and amount are required');
     }
     if (amount <= 0) {
@@ -58,7 +58,7 @@ class MockPaystackService {
 
 class MockFlutterWaveService {
   initializePayment(email, amount, txRef) {
-    if (!email || !amount || !txRef) {
+    if (!email || amount == null || !txRef) {
       throw new Error('Email, amount, and txRef are required');
     }
     if (amount <= 0) {

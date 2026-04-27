@@ -190,6 +190,34 @@ export interface SearchHistoryDB {
   created_at: Timestamp;
 }
 
+export interface SavedSearchDB {
+  id: ID;
+  user_id: ID;
+  name: string;
+  search_term?: string;
+  filters?: Record<string, any>;
+  results_count?: number;
+  alert_enabled?: boolean;
+  alert_frequency?: 'instant' | 'daily' | 'weekly';
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface PropertyAlertDB {
+  id: ID;
+  user_id: ID;
+  name: string;
+  criteria?: Record<string, any>;
+  frequency: 'instant' | 'daily' | 'weekly';
+  enabled: boolean;
+  match_count?: number;
+  last_triggered_at?: Timestamp;
+  email?: string;
+  push_notifications: boolean;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 // ========================================
 // Image/Media Database Types
 // ========================================

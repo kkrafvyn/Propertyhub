@@ -67,9 +67,14 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 // ========================================
 
 /**
- * User role definitions with specific permissions
+ * User role definitions with legacy string compatibility
  */
-export type UserRole = 'user' | 'host' | 'manager' | 'admin' | string;
+export type UserRole =
+  | 'user'
+  | 'host'
+  | 'manager'
+  | 'admin'
+  | string;
 
 /**
  * User status definitions
@@ -87,6 +92,13 @@ export interface UserPreferences {
     email: boolean;
     sms: boolean;
     marketing: boolean;
+    inApp?: boolean;
+    soundEnabled?: boolean;
+    doNotDisturb?: {
+      enabled: boolean;
+      startTime: string;
+      endTime: string;
+    };
   };
   privacy: {
     showProfile: boolean;
@@ -96,6 +108,15 @@ export interface UserPreferences {
     currency: Currency;
     dateFormat: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
     timeFormat: '12h' | '24h';
+  };
+  security?: {
+    biometrics?: {
+      enabled: boolean;
+      promptOnLaunch: boolean;
+      allowDeviceCredentials: boolean;
+      lastVerifiedAt?: Timestamp;
+      biometryType?: string;
+    };
   };
 }
 
@@ -161,6 +182,8 @@ export interface User {
   // Role-specific data
   hostData?: HostData;
   managerData?: ManagerData;
+  serviceProviderData?: ServiceProviderData;
+  financeOpsData?: FinanceOpsData;
 }
 
 /**
@@ -186,6 +209,28 @@ export interface ManagerData {
   permissions: ManagerPermission[];
   supervisor: ID; // admin who assigned this manager
   territory?: string;
+}
+
+/**
+ * Service provider specific data
+ */
+export interface ServiceProviderData {
+  specialties: string[];
+  activeJobs: number;
+  completedJobs: number;
+  averageResponseTimeHours?: number;
+  serviceArea?: string;
+  rating?: number;
+}
+
+/**
+ * Finance operations specific data
+ */
+export interface FinanceOpsData {
+  permissions: Array<'audit_payments' | 'approve_refunds' | 'manage_escrow' | 'handle_disputes'>;
+  managedTransactionVolume?: number;
+  openDisputes?: number;
+  pendingRefunds?: number;
 }
 
 /**
@@ -802,19 +847,16 @@ export type AppState =
   | 'marketplace'
   | 'dashboard'
   | 'admin'
-  | 'analytics'
   | 'profile'
   | 'chat'
   | 'map'
   | 'payments'
-  | 'search'
-  | 'demo'
-  | 'monitoring'
-  | 'backend'
+  | 'billing'
+  | 'help'
+  | 'privacy'
   | 'property-details'
   | 'profile-settings'
   | 'property-management'
-  | 'property-upload'
   | 'directions'
   | 'tour-scheduler'
   | 'offline-maps';
@@ -918,6 +960,8 @@ export interface AppConfig {
   
   maps: {
     googleApiKey?: string;
+    mapboxAccessToken?: string;
+    displayProvider?: 'google' | 'mapbox' | 'fallback';
     defaultCenter: { lat: number; lng: number };
     defaultZoom: number;
   };
@@ -1043,19 +1087,16 @@ export type AppView =
   | 'marketplace' 
   | 'dashboard' 
   | 'admin' 
-  | 'analytics' 
   | 'profile' 
   | 'chat' 
   | 'map' 
   | 'payments' 
-  | 'search' 
-  | 'demo'
-  | 'monitoring' 
-  | 'backend' 
+  | 'billing'
+  | 'help'
+  | 'privacy'
   | 'property-details' 
   | 'profile-settings' 
   | 'property-management' 
-  | 'property-upload' 
   | 'directions' 
   | 'tour-scheduler' 
   | 'offline-maps'
@@ -1103,7 +1144,7 @@ export const isUser = (obj: any): obj is User => {
     typeof obj.id === 'string' &&
     typeof obj.email === 'string' &&
     typeof obj.name === 'string' &&
-    ['user', 'host', 'manager', 'admin'].includes(obj.role)
+    typeof obj.role === 'string'
   );
 };
 
@@ -1139,7 +1180,14 @@ export const defaultUserPreferences: UserPreferences = {
     push: true,
     email: true,
     sms: false,
-    marketing: false
+    marketing: false,
+    inApp: true,
+    soundEnabled: true,
+    doNotDisturb: {
+      enabled: false,
+      startTime: '22:00',
+      endTime: '07:00',
+    },
   },
   privacy: {
     showProfile: true,
@@ -1149,7 +1197,14 @@ export const defaultUserPreferences: UserPreferences = {
     currency: 'GHS',
     dateFormat: 'DD/MM/YYYY',
     timeFormat: '24h'
-  }
+  },
+  security: {
+    biometrics: {
+      enabled: false,
+      promptOnLaunch: false,
+      allowDeviceCredentials: true,
+    },
+  },
 };
 
 export const defaultSearchFilters: SearchFilters = {

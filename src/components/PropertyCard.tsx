@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Bath,
   Bed,
+  CreditCard,
   Heart,
   MapPin,
   Scale,
@@ -16,10 +17,7 @@ import {
 } from 'lucide-react';
 
 import { CheckoutWrapper } from './payments/CheckoutWrapper';
-import { MobileCheckoutButton } from './payments/MobileCheckoutButton';
 import type { TransactionType } from './payments/CheckoutWrapper';
-
-import { useMobile } from '../hooks/useMobile';
 
 import { formatPrice } from '../utils/propertyFiltering';
 import { getLocationLabel, getPropertyPrice } from '../utils/location';
@@ -55,6 +53,24 @@ const getPriceSuffix = (property: Property) => {
   return 'month';
 };
 
+const getQuickActionConfig = (
+  property: Property
+): { label: string; transactionType: TransactionType } => {
+  if (property.listingType === 'rent') {
+    return { label: 'Start rent', transactionType: 'rent' };
+  }
+
+  if (property.listingType === 'lease') {
+    return { label: 'Start lease', transactionType: 'lease' };
+  }
+
+  if (property.listingType === 'shortlet') {
+    return { label: 'Book stay', transactionType: 'booking' };
+  }
+
+  return { label: 'Buy now', transactionType: 'purchase' };
+};
+
 export function PropertyCard({
   property,
   currentUser,
@@ -62,16 +78,18 @@ export function PropertyCard({
   onNavigate,
   showQuickActions = false,
 }: PropertyCardProps) {
-  const isMobile = useMobile();
   const { favoriteProperties, comparedProperties, toggleFavorite, toggleCompareProperty } =
     useAppContext();
   const propertyLocation = getLocationLabel(property.location);
   const propertyPrice = getPropertyPrice(property);
   const propertyCurrency = property.pricing?.currency || property.currency || 'GHS';
-  const amenityHighlights = property.amenities.slice(0, 3);
+  const amenityHighlights = Array.isArray(property.amenities) ? property.amenities.slice(0, 3) : [];
   const isAvailable = property.available ?? property.status === 'available';
   const isFavorite = favoriteProperties.includes(property.id);
   const isCompared = comparedProperties.includes(property.id);
+  const propertyDescription =
+    property.description?.trim() || 'Refined living space in a well-connected neighborhood.';
+  const quickAction = getQuickActionConfig(property);
 
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [selectedTransactionType, setSelectedTransactionType] =
@@ -110,18 +128,13 @@ export function PropertyCard({
     onNavigate?.('dashboard');
   };
 
-  const handleLoginRequired = (): void => {
-    toast.info('Please log in to continue with payment');
-    onNavigate?.('login');
-  };
-
   return (
     <>
       <Card
-        className="property-card group overflow-hidden rounded-[30px] border border-border bg-card/90 shadow-[0_12px_36px_rgba(15,23,42,0.08)] transition-all duration-300"
+        className="property-card group cursor-pointer gap-0 overflow-hidden rounded-[34px] border border-border/80 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card)_97%,white),color-mix(in_srgb,var(--card)_88%,var(--secondary)))]"
         onClick={handleCardClick}
       >
-        <div className="relative aspect-[4/3] overflow-hidden bg-secondary">
+        <div className="relative z-[1] aspect-[4/3] overflow-hidden bg-secondary">
           {property.images?.[0] ? (
             <img
               src={property.images[0]}
@@ -134,58 +147,79 @@ export function PropertyCard({
             </div>
           )}
 
-          <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4">
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm backdrop-blur ${
-                isAvailable ? 'theme-available-badge' : 'theme-occupied-badge'
-              }`}
-            >
-              {isAvailable ? 'Available' : 'Occupied'}
-            </span>
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(18,14,10,0.04),rgba(18,14,10,0.06)_28%,rgba(18,14,10,0.52)_100%)]" />
 
-            <div className="flex items-start gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card/92 px-3 py-1 text-xs font-semibold text-foreground shadow-sm backdrop-blur">
-                <Star className="h-3.5 w-3.5 fill-current text-[color:var(--warning)]" />
-                {property.rating?.toFixed(1) || 'New'}
+          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-4">
+            <div className="flex flex-wrap gap-2">
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold shadow-sm backdrop-blur ${
+                  isAvailable ? 'theme-available-badge' : 'theme-occupied-badge'
+                }`}
+              >
+                {isAvailable ? 'Available' : 'Occupied'}
               </span>
+              <span className="property-card-glass-chip text-xs font-semibold">
+                {getListingLabel(property)}
+              </span>
+            </div>
 
-              <div className="flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={handleFavoriteToggle}
-                  className={cn(
-                    'flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-sm backdrop-blur transition-colors',
-                    isFavorite && 'theme-accent-badge text-[color:var(--accent-soft-foreground)]'
-                  )}
-                  aria-label={isFavorite ? 'Remove from saved homes' : 'Save home'}
-                >
-                  <Heart className={cn('h-4 w-4', isFavorite && 'fill-current')} />
-                </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleFavoriteToggle}
+                className={cn(
+                  'property-card-icon-button',
+                  isFavorite &&
+                    'border-[color:var(--accent-soft-border)] bg-[color:var(--accent-soft)] text-[color:var(--accent-soft-foreground)]'
+                )}
+                aria-label={isFavorite ? 'Remove from saved homes' : 'Save home'}
+              >
+                <Heart className={cn('h-4 w-4', isFavorite && 'fill-current')} />
+              </button>
 
-                <button
-                  type="button"
-                  onClick={handleCompareToggle}
-                  className={cn(
-                    'flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card/95 text-muted-foreground shadow-sm backdrop-blur transition-colors',
-                    isCompared && 'theme-info-badge text-[color:var(--info-soft-foreground)]'
-                  )}
-                  aria-label={isCompared ? 'Remove from compare' : 'Add home to compare'}
-                >
-                  <Scale className="h-4 w-4" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleCompareToggle}
+                className={cn(
+                  'property-card-icon-button',
+                  isCompared &&
+                    'border-[color:var(--info-soft-border)] bg-[color:var(--info-soft)] text-[color:var(--info-soft-foreground)]'
+                )}
+                aria-label={isCompared ? 'Remove from compare' : 'Add home to compare'}
+              >
+                <Scale className="h-4 w-4" />
+              </button>
             </div>
           </div>
 
-          {property.featured && (
-            <div className="theme-accent-badge absolute bottom-4 left-4 inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold backdrop-blur">
-              <Sparkles className="h-3.5 w-3.5" />
-              Featured
+          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4 sm:p-5">
+            <div className="property-card-price-panel max-w-[calc(100%-5rem)] rounded-[24px] px-4 py-3">
+              <p className="text-[11px] font-medium text-white/72">Starting from</p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="text-2xl font-semibold text-white">
+                  {propertyCurrency} {formatPrice(propertyPrice)}
+                </span>
+                <span className="text-sm text-white/76">/ {getPriceSuffix(property)}</span>
+              </div>
             </div>
-          )}
+
+            <div className="flex flex-col items-end gap-2">
+              <span className="property-card-glass-chip inline-flex items-center gap-1 text-xs font-semibold">
+                <Star className="h-3.5 w-3.5 fill-current text-[#ffd36a]" />
+                {property.rating?.toFixed(1) || 'New'}
+              </span>
+
+              {property.featured && (
+                <div className="theme-accent-badge inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold backdrop-blur">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Featured
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        <CardContent className="space-y-5 p-5">
+        <CardContent className="property-card-content relative z-[1] space-y-5 p-5">
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="h-4 w-4 text-primary" />
@@ -194,58 +228,59 @@ export function PropertyCard({
 
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h3 className="line-clamp-1 text-xl font-semibold text-foreground">{property.title}</h3>
+                <h3 className="line-clamp-2 text-[1.35rem] font-semibold leading-tight text-foreground">
+                  {property.title}
+                </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {getListingLabel(property)} - {formatLabel(property.type)}
+                  {formatLabel(property.type)} residence
                 </p>
               </div>
 
-              <div className="theme-success-badge hidden px-3 py-1 text-xs font-semibold sm:inline-flex">
+              <div className="theme-success-badge inline-flex shrink-0 items-center gap-1.5 px-3 py-1 text-xs font-semibold">
+                <ShieldCheck className="h-3.5 w-3.5" />
                 Verified
               </div>
             </div>
 
             <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-              {property.description}
+              {propertyDescription}
             </p>
           </div>
 
-          <div className="air-surface-muted rounded-[24px] p-3">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-[18px] bg-card/70 px-3 py-3">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Bed className="h-4 w-4 text-primary" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Beds</span>
-                </div>
-                <p className="mt-2 text-base font-semibold text-foreground">{property.bedrooms || '-'}</p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="property-card-stat rounded-[20px] px-3 py-3">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Bed className="h-4 w-4 text-primary" />
+                <span className="text-[11px] font-medium text-muted-foreground">Beds</span>
               </div>
+              <p className="mt-2 text-base font-semibold text-foreground">{property.bedrooms || '-'}</p>
+            </div>
 
-              <div className="rounded-[18px] bg-card/70 px-3 py-3">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Bath className="h-4 w-4 text-primary" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Baths</span>
-                </div>
-                <p className="mt-2 text-base font-semibold text-foreground">{property.bathrooms || '-'}</p>
+            <div className="property-card-stat rounded-[20px] px-3 py-3">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Bath className="h-4 w-4 text-primary" />
+                <span className="text-[11px] font-medium text-muted-foreground">Baths</span>
               </div>
+              <p className="mt-2 text-base font-semibold text-foreground">{property.bathrooms || '-'}</p>
+            </div>
 
-              <div className="rounded-[18px] bg-card/70 px-3 py-3">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Square className="h-4 w-4 text-primary" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.18em]">Area</span>
-                </div>
-                <p className="mt-2 text-base font-semibold text-foreground">
-                  {property.area ? `${property.area} m2` : '-'}
-                </p>
+            <div className="property-card-stat rounded-[20px] px-3 py-3">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Square className="h-4 w-4 text-primary" />
+                <span className="text-[11px] font-medium text-muted-foreground">Area</span>
               </div>
+              <p className="mt-2 text-base font-semibold text-foreground">
+                {property.area ? `${property.area} m2` : '-'}
+              </p>
             </div>
           </div>
 
           {amenityHighlights.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {amenityHighlights.slice(0, 2).map((amenity) => (
+              {amenityHighlights.map((amenity) => (
                 <span
                   key={amenity}
-                  className="rounded-full border border-border bg-card/90 px-3 py-1.5 text-xs font-medium text-muted-foreground"
+                  className="property-card-inline-chip rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground"
                 >
                   {amenity}
                 </span>
@@ -254,74 +289,54 @@ export function PropertyCard({
           )}
 
           <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                Starting from
-              </p>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="theme-price-text text-2xl font-semibold">
-                  {propertyCurrency} {formatPrice(propertyPrice)}
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                Verified listing
+              </span>
+              {isFavorite && (
+                <span className="theme-accent-badge inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium">
+                  <Heart className="h-3.5 w-3.5 fill-current" />
+                  Saved
                 </span>
-                <span className="text-sm text-muted-foreground">/ {getPriceSuffix(property)}</span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                  Verified listing
+              )}
+              {isCompared && (
+                <span className="theme-info-badge inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium">
+                  <Scale className="h-3.5 w-3.5" />
+                  Comparing
                 </span>
-                {isFavorite && (
-                  <span className="theme-accent-badge inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium">
-                    <Heart className="h-3.5 w-3.5 fill-current" />
-                    Saved
-                  </span>
-                )}
-                {isCompared && (
-                  <span className="theme-info-badge inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium">
-                    <Scale className="h-3.5 w-3.5" />
-                    Comparing
-                  </span>
-                )}
-              </div>
+              )}
             </div>
 
-            <div className="flex flex-col gap-2 sm:items-end">
-              <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              {showQuickActions && currentUser && isAvailable && (
                 <Button
                   type="button"
-                  variant={isCompared ? 'secondary' : 'outline'}
-                  onClick={handleCompareToggle}
-                  className="h-11 rounded-full px-4"
-                >
-                  <Scale className="mr-2 h-4 w-4" />
-                  {isCompared ? 'Comparing' : 'Compare'}
-                </Button>
-                <Button
-                  type="button"
+                  variant="outline"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onSelect(property);
+                    handleCheckoutOpen(quickAction.transactionType);
                   }}
                   className="h-11 rounded-full px-5"
                 >
-                  View home
-                  <ArrowRight className="ml-2 h-4 w-4" />
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  {quickAction.label}
                 </Button>
-              </div>
+              )}
+
+              <Button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelect(property);
+                }}
+                className="h-11 rounded-full px-5"
+              >
+                View home
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
             </div>
           </div>
-
-          {showQuickActions && currentUser && isAvailable && (
-            <MobileCheckoutButton
-              property={property}
-              currentUser={currentUser}
-              defaultTransactionType="purchase"
-              onCheckoutOpen={handleCheckoutOpen}
-              onLoginRequired={handleLoginRequired}
-              variant={isMobile ? 'expanded' : 'default'}
-              showPaymentMethods={!isMobile}
-              className={cn(isMobile && 'w-full')}
-            />
-          )}
         </CardContent>
       </Card>
 

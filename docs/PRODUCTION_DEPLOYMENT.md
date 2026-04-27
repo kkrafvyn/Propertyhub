@@ -1,5 +1,7 @@
 # PropertyHub Production Deployment Guide
 
+> This is a legacy deployment guide for the older websocket stack. For current secret handling, keep server-only values out of client env files and follow [SERVER_SECRETS_SETUP.md](./SERVER_SECRETS_SETUP.md).
+
 ## Complete Production Setup for Real-time Chat System
 
 This guide covers the deployment of PropertyHub's production-ready WebSocket server, push notifications, voice messaging, file sharing, and end-to-end encryption features.
